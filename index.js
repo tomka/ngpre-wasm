@@ -2,7 +2,7 @@ const js = import("./pkg");
 
 js
   .then(js => {
-    return js.N5HTTPFetch.open("http://localhost:8090")
+    return js.NGPREHTTPFetch.open("http://localhost:8090")
   })
   .then(reader => {
     return Promise.all([

@@ -14,7 +14,7 @@ use web_sys::{
 use super::*;
 
 
-const ATTRIBUTES_FILE: &str = "attributes.json";
+const ATTRIBUTES_FILE: &str = "info";
 
 enum GlobalProxy {
     Window(web_sys::Window),
@@ -43,11 +43,11 @@ fn self_() -> Result<GlobalProxy, JsValue> {
 
 #[wasm_bindgen]
 #[derive(Clone)]
-pub struct N5HTTPFetch {
+pub struct NgPreHTTPFetch {
     base_path: String,
 }
 
-impl N5HTTPFetch {
+impl NgPreHTTPFetch {
     fn fetch(&self, path_name: &str) -> JsFuture {
         let mut request_options = RequestInit::new();
         request_options.method("GET");
@@ -101,15 +101,15 @@ impl N5HTTPFetch {
 }
 
 #[wasm_bindgen]
-impl N5HTTPFetch {
+impl NgPreHTTPFetch {
     pub fn open(base_path: &str) -> Promise {
-        let reader = N5HTTPFetch {
+        let reader = NgPreHTTPFetch {
             base_path: base_path.into(),
         };
 
-        let to_return = N5AsyncReader::get_version(&reader).and_then(|version| {
+        let to_return = NgPreAsyncReader::get_version(&reader).and_then(|version| {
 
-            if !n5::is_version_compatible(&n5::VERSION, &version) {
+            if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
                 return future::err(Error::new(ErrorKind::Other, "TODO: Incompatible version"))
             }
 
@@ -120,23 +120,23 @@ impl N5HTTPFetch {
     }
 }
 
-/// Delegations to expose N5PromiseReader trait to WASM.
+/// Delegations to expose NgPrePromiseReader trait to WASM.
 #[wasm_bindgen]
-impl N5HTTPFetch {
+impl NgPreHTTPFetch {
     pub fn get_version(&self) -> Promise {
-        N5PromiseReader::get_version(self)
+        NgPrePromiseReader::get_version(self)
     }
 
     pub fn get_dataset_attributes(&self, path_name: &str) -> Promise {
-        N5PromiseReader::get_dataset_attributes(self, path_name)
+        NgPrePromiseReader::get_dataset_attributes(self, path_name)
     }
 
     pub fn exists(&self, path_name: &str) -> Promise {
-        N5PromiseReader::exists(self, path_name)
+        NgPrePromiseReader::exists(self, path_name)
     }
 
     pub fn dataset_exists(&self, path_name: &str) -> Promise {
-        N5PromiseReader::dataset_exists(self, path_name)
+        NgPrePromiseReader::dataset_exists(self, path_name)
     }
 
     pub fn read_block(
@@ -145,11 +145,11 @@ impl N5HTTPFetch {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<u64>,
     ) -> Promise {
-        N5PromiseReader::read_block(self, path_name, data_attrs, grid_position)
+        NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position)
     }
 
     pub fn list_attributes(&self, path_name: &str) -> Promise {
-        N5PromiseReader::list_attributes(self, path_name)
+        NgPrePromiseReader::list_attributes(self, path_name)
     }
 
     pub fn block_etag(
@@ -158,7 +158,7 @@ impl N5HTTPFetch {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<u64>,
     ) -> Promise {
-        N5PromiseEtagReader::block_etag(
+        NgPrePromiseEtagReader::block_etag(
             self, path_name, data_attrs, grid_position)
     }
 
@@ -168,25 +168,25 @@ impl N5HTTPFetch {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<u64>
     ) -> Promise {
-        N5PromiseEtagReader::read_block_with_etag(
+        NgPrePromiseEtagReader::read_block_with_etag(
             self, path_name, data_attrs, grid_position)
     }
 }
 
-impl N5AsyncReader for N5HTTPFetch {
-    fn get_version(&self) -> Box<dyn Future<Item = n5::Version, Error = Error>> {
+impl NgPreAsyncReader for NgPreHTTPFetch {
+    fn get_version(&self) -> Box<dyn Future<Item = ngpre::Version, Error = Error>> {
         let to_return = self.get_attributes("")
             .and_then(|attr| {
-                let ver = attr.get(n5::VERSION_ATTRIBUTE_KEY)
-                    .ok_or_else(|| Error::new(ErrorKind::NotFound, "Not an N5 root"))?;
-                Ok(n5::Version::from_str(ver.as_str().unwrap_or("")).unwrap())
+                let ver = attr.get(ngpre::VERSION_ATTRIBUTE_KEY)
+                    .ok_or_else(|| Error::new(ErrorKind::NotFound, "Not an NgPre root"))?;
+                Ok(ngpre::Version::from_str(ver.as_str().unwrap_or("")).unwrap())
             });
 
         Box::new(to_return)
     }
 
     fn get_dataset_attributes(&self, path_name: &str) ->
-            Box<dyn Future<Item = n5::DatasetAttributes, Error = Error>> {
+            Box<dyn Future<Item = ngpre::DatasetAttributes, Error = Error>> {
 
         let path = self.get_dataset_attributes_path(path_name);
         let to_return = self
@@ -207,11 +207,11 @@ impl N5AsyncReader for N5HTTPFetch {
         Box::new(map_future_error_rust(to_return))
     }
 
-    // Override the default N5AsyncReader impl to not require the GET on the
+    // Override the default NgPreAsyncReader impl to not require the GET on the
     // dataset directory path to be 200.
     fn dataset_exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>> {
         let path = self.get_dataset_attributes_path(path_name);
-        N5AsyncReader::exists(self, &path)
+        NgPreAsyncReader::exists(self, &path)
     }
 
     fn read_block<T>(
@@ -220,11 +220,11 @@ impl N5AsyncReader for N5HTTPFetch {
         data_attrs: &DatasetAttributes,
         grid_position: GridCoord,
     ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
-        where VecDataBlock<T>: DataBlock<T> + n5::ReadableDataBlock,
+        where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
             T: ReflectedType,
     {
 
-        Box::new(N5AsyncEtagReader::read_block_with_etag(
+        Box::new(NgPreAsyncEtagReader::read_block_with_etag(
                 self, path_name, data_attrs, grid_position)
             .map(|maybe_block| maybe_block.map(|(block, _etag)| block)))
     }
@@ -243,7 +243,7 @@ impl N5AsyncReader for N5HTTPFetch {
     }
 }
 
-impl N5AsyncEtagReader for N5HTTPFetch {
+impl NgPreAsyncEtagReader for NgPreHTTPFetch {
     fn block_etag(
         &self,
         path_name: &str,
@@ -283,7 +283,7 @@ impl N5AsyncEtagReader for N5HTTPFetch {
         data_attrs: &DatasetAttributes,
         grid_position: GridCoord,
     ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
-            where VecDataBlock<T>: DataBlock<T> + n5::ReadableDataBlock,
+            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType,
     {
 
@@ -303,7 +303,7 @@ impl N5AsyncEtagReader for N5HTTPFetch {
                         let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
                         let buff = typebuff.to_vec();
 
-                        Some((<n5::DefaultBlock as n5::DefaultBlockReader<T, &[u8]>>::read_block(
+                        Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
                             &buff,
                             &da2,
                             grid_position).unwrap(),

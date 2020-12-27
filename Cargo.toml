@@ -1,12 +1,12 @@
 [package]
-name = "n5-wasm"
-version = "0.2.1"
+name = "ngpre-wasm"
+version = "0.0.1"
 license = "MIT/Apache-2.0"
-authors = ["Andrew Champion <andrew.champion@gmail.com>"]
+authors = ["Tom Kazimiers <tom@voodoo-arts.net>"]
 edition = "2018"
-description = "Rust-WASM bindings to the N5 tensor file system format"
+description = "Rust-WASM bindings to the Neuroglancer Precomputed file format"
 readme = "README.md"
-repository = "https://github.com/aschampion/n5-wasm"
+repository = "https://github.com/tomka/ngpre-wasm"
 keywords = ["tensor"]
 categories = ["encoding", "filesystem", "science", "wasm"]
 
@@ -33,8 +33,9 @@ wasm-bindgen-futures = "0.3.27"
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.6", optional = true }
 
-[dependencies.n5]
-version = "0.6.0"
+[dependencies.ngpre]
+path = "../rust-ngpre"
+#version = "0.0.1"
 default-features = false
 features = ["gzip"]
 
@@ -52,3 +53,6 @@ features = [
 
 [profile.release]
 lto = true
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

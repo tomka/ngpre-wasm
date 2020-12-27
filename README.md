@@ -1,18 +1,18 @@
-# N5 [![Build Status](https://travis-ci.org/aschampion/n5-wasm.svg?branch=master)](https://travis-ci.org/aschampion/n5-wasm)
+# NG-Pre [![Build Status](https://travis-ci.org/tomka/ngpre-wasm.svg?branch=master)](https://travis-ci.org/tomka/ngpre-wasm)
 
-Browser-compatible WASM bindings to the [Rust implementation](https://github.com/aschampion/rust-n5) of the [N5 "Not HDF5" n-dimensional tensor file system storage format](https://github.com/saalfeldlab/n5)
+Browser-compatible WASM bindings to the [Rust implementation](https://github.com/tomka/rust-ngpre) of the [Neuroglancer Precomputed n-dimensional tensor file storage format](https://github.com/google/neuroglancer/tree/master/src/neuroglancer/datasource/precomputed). This library is based on the [n5-wasm](https://github.com/aschampion/n5-wasm) and [rust-n5](https://github.com/aschampion/rust-n5) libraries.
 
-N5 datasets must be available via CORS-compatible HTTP. Compatible with Java N5 Version 2.0.2.
+NGPre datasets must be available via CORS-compatible HTTP.
 
-Currently only raw and GZIP compression are supported.
+Currently no compression is supported.
 
 ## Build Instructions
 
 This assumes you have [rustup](https://rustup.rs/) installed.
 
 ```sh
-git clone https://github.com/aschampion/n5-wasm
-cd n5-wasm
+git clone https://github.com/tomka/ngpre-wasm
+cd ngpre-wasm
 rustup override set nightly
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 wasm-pack build

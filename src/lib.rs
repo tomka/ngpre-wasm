@@ -1,6 +1,6 @@
 use futures;
 use js_sys;
-use n5;
+use ngpre;
 use serde_json;
 use wasm_bindgen;
 use wasm_bindgen_futures;
@@ -18,15 +18,15 @@ use futures::{future, Future};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
-use n5::prelude::*;
-use n5::{data_type_match, data_type_rstype_replace};
+use ngpre::prelude::*;
+use ngpre::{data_type_match, data_type_rstype_replace};
 
 
 pub mod http_fetch;
 
 
-pub trait N5PromiseReader {
-    /// Get the N5 specification version of the container.
+pub trait NgPrePromiseReader {
+    /// Get the NgPre specification version of the container.
     fn get_version(&self) -> Promise;
 
     fn get_dataset_attributes(&self, path_name: &str) -> Promise;
@@ -45,7 +45,7 @@ pub trait N5PromiseReader {
     fn list_attributes(&self, path_name: &str) -> Promise;
 }
 
-impl<T> N5PromiseReader for T where T: N5AsyncReader {
+impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
     fn get_version(&self) -> Promise {
         let to_return = self.get_version()
             .map(|v| JsValue::from(wrapped::Version(v)));
@@ -104,7 +104,7 @@ impl<T> N5PromiseReader for T where T: N5AsyncReader {
 }
 
 
-pub trait N5PromiseEtagReader {
+pub trait NgPrePromiseEtagReader {
     fn block_etag(
         &self,
         path_name: &str,
@@ -120,7 +120,7 @@ pub trait N5PromiseEtagReader {
     ) -> Promise;
 }
 
-impl<T> N5PromiseEtagReader for T where T: N5AsyncEtagReader {
+impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
     fn block_etag(
         &self,
         path_name: &str,
@@ -153,12 +153,12 @@ impl<T> N5PromiseEtagReader for T where T: N5AsyncEtagReader {
 
 /// This trait exists to preserve type information between calls (rather than
 /// erasing it with `Promise`) and for easier potential future compatibility
-/// with an N5 core async trait.
-pub trait N5AsyncReader {
-    fn get_version(&self) -> Box<dyn Future<Item = n5::Version, Error = Error>>;
+/// with an NgPre core async trait.
+pub trait NgPreAsyncReader {
+    fn get_version(&self) -> Box<dyn Future<Item = ngpre::Version, Error = Error>>;
 
     fn get_dataset_attributes(&self, path_name: &str) ->
-        Box<dyn Future<Item = n5::DatasetAttributes, Error = Error>>;
+        Box<dyn Future<Item = ngpre::DatasetAttributes, Error = Error>>;
 
     fn exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>>;
 
@@ -176,7 +176,7 @@ pub trait N5AsyncReader {
         data_attrs: &DatasetAttributes,
         grid_position: GridCoord,
     ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
-            where VecDataBlock<T>: DataBlock<T> + n5::ReadableDataBlock,
+            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
 
     fn list(&self, path_name: &str) -> Box<dyn Future<Item = Vec<String>, Error = Error>>;
@@ -185,7 +185,7 @@ pub trait N5AsyncReader {
 }
 
 
-pub trait N5AsyncEtagReader {
+pub trait NgPreAsyncEtagReader {
     fn block_etag(
         &self,
         path_name: &str,
@@ -199,7 +199,7 @@ pub trait N5AsyncEtagReader {
         data_attrs: &DatasetAttributes,
         grid_position: GridCoord,
     ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
-            where VecDataBlock<T>: DataBlock<T> + n5::ReadableDataBlock,
+            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
 }
 
@@ -226,7 +226,7 @@ pub mod wrapped {
     use super::*;
 
     #[wasm_bindgen]
-    pub struct Version(pub(crate) n5::Version);
+    pub struct Version(pub(crate) ngpre::Version);
 
     #[wasm_bindgen]
     impl Version {
@@ -237,7 +237,7 @@ pub mod wrapped {
 
     #[wasm_bindgen]
     #[derive(serde::Deserialize, serde::Serialize)]
-    pub struct DatasetAttributes(pub(crate) n5::DatasetAttributes);
+    pub struct DatasetAttributes(pub(crate) ngpre::DatasetAttributes);
 
     #[wasm_bindgen]
     impl DatasetAttributes {
