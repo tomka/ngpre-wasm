@@ -1,10 +1,10 @@
 # NG-Pre [![Build Status](https://travis-ci.org/tomka/ngpre-wasm.svg?branch=master)](https://travis-ci.org/tomka/ngpre-wasm)
 
-Browser-compatible WASM bindings to the [Rust implementation](https://github.com/tomka/rust-ngpre) of the [Neuroglancer Precomputed n-dimensional tensor file storage format](https://github.com/google/neuroglancer/tree/master/src/neuroglancer/datasource/precomputed). This library is based on the [n5-wasm](https://github.com/aschampion/n5-wasm) and [rust-n5](https://github.com/aschampion/rust-n5) libraries.
+Browser-compatible WASM bindings to the [Rust implementation](https://github.com/tomka/rust-ngpre) of the [Neuroglancer Precomputed n-dimensional tensor file storage format](https://github.com/google/neuroglancer/tree/master/src/neuroglancer/datasource/precomputed). This library is based on the [n5-wasm](https://github.com/aschampion/n5-wasm) and [rust-n5](https://github.com/aschampion/rust-n5) libraries and reused a lot of its infrastructure.
 
 NGPre datasets must be available via CORS-compatible HTTP.
 
-Currently no compression is supported.
+Currently no chunk compression is supported.
 
 ## Build Instructions
 
@@ -15,7 +15,8 @@ git clone https://github.com/tomka/ngpre-wasm
 cd ngpre-wasm
 rustup override set nightly
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-wasm-pack build
+wasm-pack build --target no-modules --dev
+echo "self.ngpre_wasm = wasm_bindgen;" >> pkg/ngpre_wasm.js
 ```
 
 The built npm package will be in `pkg/`.

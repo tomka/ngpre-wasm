@@ -2,7 +2,7 @@
 name = "ngpre-wasm"
 version = "0.0.1"
 license = "MIT/Apache-2.0"
-authors = ["Tom Kazimiers <tom@voodoo-arts.net>"]
+authors = ["Tom Kazimiers <tom@voodoo-arts.net>", "Andrew Champion <andrew.champion@gmail.com>"]
 edition = "2018"
 description = "Rust-WASM bindings to the Neuroglancer Precomputed file format"
 readme = "README.md"

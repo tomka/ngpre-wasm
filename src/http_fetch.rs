@@ -82,10 +82,16 @@ impl NgPreHTTPFetch {
         map_future_error_rust(to_return)
     }
 
-    fn relative_block_path(&self, path_name: &str, grid_position: &[u64]) -> String {
+    fn relative_block_path(&self, path_name: &str, grid_position: &[u64], block_size: &[u32]) -> String {
         let mut block_path = path_name.to_owned();
+        let mut n = 0;
+        write!(block_path, "/").unwrap();
         for coord in grid_position {
-            write!(block_path, "/{}", coord).unwrap();
+            if n > 0 {
+                write!(block_path, "_").unwrap();
+            }
+            write!(block_path, "{}-{}", coord * block_size[n] as u64, (coord + 1) * block_size[n] as u64).unwrap();
+            n = n + 1;
         }
 
         block_path
@@ -95,7 +101,8 @@ impl NgPreHTTPFetch {
         if path_name.is_empty() {
             ATTRIBUTES_FILE.to_owned()
         } else {
-            format!("{}/{}", path_name, ATTRIBUTES_FILE)
+            // There is only one top-level attribute file
+            format!("{}", ATTRIBUTES_FILE)
         }
     }
 }
@@ -176,10 +183,8 @@ impl NgPreHTTPFetch {
 impl NgPreAsyncReader for NgPreHTTPFetch {
     fn get_version(&self) -> Box<dyn Future<Item = ngpre::Version, Error = Error>> {
         let to_return = self.get_attributes("")
-            .and_then(|attr| {
-                let ver = attr.get(ngpre::VERSION_ATTRIBUTE_KEY)
-                    .ok_or_else(|| Error::new(ErrorKind::NotFound, "Not an NgPre root"))?;
-                Ok(ngpre::Version::from_str(ver.as_str().unwrap_or("")).unwrap())
+            .and_then(|_attr| {
+                Ok(ngpre::Version::from_str(&"2.3.0").unwrap())
             });
 
         Box::new(to_return)
@@ -254,7 +259,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         request_options.method("HEAD");
         request_options.mode(RequestMode::Cors);
 
-        let block_path = self.relative_block_path(path_name, &grid_position);
+        let block_path = self.relative_block_path(path_name, &grid_position, _data_attrs.get_block_size());
 
         let req = Request::new_with_str_and_init(
             &format!("{}/{}", &self.base_path, block_path),
@@ -289,7 +294,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         let da2 = data_attrs.clone();
 
-        let block_path = self.relative_block_path(path_name, &grid_position);
+        let block_path = self.relative_block_path(path_name, &grid_position, data_attrs.get_block_size());
 
         let f = self.fetch(&block_path).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
