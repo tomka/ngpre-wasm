@@ -15,7 +15,7 @@ git clone https://github.com/tomka/ngpre-wasm
 cd ngpre-wasm
 rustup override set nightly
 curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
-wasm-pack build --target no-modules --dev
+wasm-pack build --target no-modules --release
 echo "self.ngpre_wasm = wasm_bindgen;" >> pkg/ngpre_wasm.js
 ```
 
