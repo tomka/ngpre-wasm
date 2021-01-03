@@ -14,7 +14,6 @@ use std::io::{
 };
 
 use js_sys::Promise;
-use js_sys::Array;
 use futures::{future, Future};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
