@@ -1,5 +1,6 @@
 use std::fmt::Write;
 use std::str::FromStr;
+use std::cmp;
 
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
@@ -82,7 +83,7 @@ impl NgPreHTTPFetch {
         map_future_error_rust(to_return)
     }
 
-    fn relative_block_path(&self, path_name: &str, grid_position: &[u64], block_size: &[u32]) -> String {
+    fn relative_block_path(&self, path_name: &str, grid_position: &[u64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
         let mut block_path = path_name.to_owned();
         let mut n = 0;
         write!(block_path, "/").unwrap();
@@ -90,7 +91,12 @@ impl NgPreHTTPFetch {
             if n > 0 {
                 write!(block_path, "_").unwrap();
             }
-            write!(block_path, "{}-{}", coord * block_size[n] as u64, (coord + 1) * block_size[n] as u64).unwrap();
+            let begin_offset = voxel_offset[n] as i64 + (coord * block_size[n] as u64) as i64;
+            let end_offset = cmp::min(
+                    voxel_offset[n] as i64 + ((coord + 1) * block_size[n] as u64) as i64,
+                    dimensions[n] as i64);
+
+            write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
             n = n + 1;
         }
 
@@ -173,7 +179,7 @@ impl NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>
+        grid_position: Vec<u64>,
     ) -> Promise {
         NgPrePromiseEtagReader::read_block_with_etag(
             self, path_name, data_attrs, grid_position)
@@ -259,7 +265,12 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         request_options.method("HEAD");
         request_options.mode(RequestMode::Cors);
 
-        let block_path = self.relative_block_path(path_name, &grid_position, _data_attrs.get_block_size());
+        // TODO: Could be nicer
+        let zoom_level = _data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
+
+        let block_path = self.relative_block_path(path_name, &grid_position,
+                 _data_attrs.get_block_size(zoom_level), _data_attrs.get_voxel_offset(zoom_level),
+                 _data_attrs.get_dimensions(zoom_level));
 
         let req = Request::new_with_str_and_init(
             &format!("{}/{}", &self.base_path, block_path),
@@ -294,7 +305,12 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         let da2 = data_attrs.clone();
 
-        let block_path = self.relative_block_path(path_name, &grid_position, data_attrs.get_block_size());
+        // TODO: Could be nicer
+        let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
+
+        let block_path = self.relative_block_path(path_name, &grid_position,
+                data_attrs.get_block_size(zoom_level), data_attrs.get_voxel_offset(zoom_level),
+                data_attrs.get_dimensions(zoom_level));
 
         let f = self.fetch(&block_path).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());

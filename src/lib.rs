@@ -14,6 +14,7 @@ use std::io::{
 };
 
 use js_sys::Promise;
+use js_sys::Array;
 use futures::{future, Future};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
@@ -241,16 +242,16 @@ pub mod wrapped {
 
     #[wasm_bindgen]
     impl DatasetAttributes {
-        pub fn get_dimensions(&self) -> Vec<u64> {
-            self.0.get_dimensions().to_owned()
+        pub fn get_dimensions(&self, zoom_level: usize) -> Vec<u64> {
+            self.0.get_dimensions(zoom_level).to_owned()
         }
 
-        pub fn get_block_size(&self) -> Vec<u32> {
-            self.0.get_block_size().to_owned()
+        pub fn get_block_size(&self, zoom_level: usize) -> Vec<u32> {
+            self.0.get_block_size(zoom_level).to_owned()
         }
 
-        pub fn get_voxel_offset(&self) -> Vec<i32> {
-            self.0.get_voxel_offset().to_owned()
+        pub fn get_voxel_offset(&self, zoom_level: usize) -> Vec<i32> {
+            self.0.get_voxel_offset(zoom_level).to_owned()
         }
 
         pub fn get_data_type(&self) -> String {
@@ -261,18 +262,18 @@ pub mod wrapped {
             self.0.get_compression().to_string()
         }
 
-        pub fn get_ndim(&self) -> usize {
-            self.0.get_ndim()
+        pub fn get_ndim(&self, zoom_level: usize) -> usize {
+            self.0.get_ndim(zoom_level)
         }
 
         /// Get the total number of elements possible given the dimensions.
-        pub fn get_num_elements(&self) -> usize {
-            self.0.get_num_elements()
+        pub fn get_num_elements(&self, zoom_level: usize) -> usize {
+            self.0.get_num_elements(zoom_level)
         }
 
         /// Get the total number of elements possible in a block.
-        pub fn get_block_num_elements(&self) -> usize {
-            self.0.get_block_num_elements()
+        pub fn get_block_num_elements(&self, zoom_level: usize) -> usize {
+            self.0.get_block_num_elements(zoom_level)
         }
 
         pub fn to_json(&self) -> JsValue {
