@@ -92,9 +92,9 @@ impl NgPreHTTPFetch {
                 write!(block_path, "_").unwrap();
             }
             let begin_offset = voxel_offset[n] as i64 + (coord * block_size[n] as u64) as i64;
-            let end_offset = cmp::min(
-                    voxel_offset[n] as i64 + ((coord + 1) * block_size[n] as u64) as i64,
-                    dimensions[n] as i64);
+            let end_offset = voxel_offset[n] as u64 + cmp::min(
+                     (coord + 1) * block_size[n] as u64,
+                     dimensions[n]);
 
             write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
             n = n + 1;
