@@ -83,7 +83,7 @@ impl NgPreHTTPFetch {
         map_future_error_rust(to_return)
     }
 
-    fn relative_block_path(&self, path_name: &str, grid_position: &[u64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
+    fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
         let mut block_path = path_name.to_owned();
         let mut n = 0;
         write!(block_path, "/").unwrap();
@@ -91,10 +91,10 @@ impl NgPreHTTPFetch {
             if n > 0 {
                 write!(block_path, "_").unwrap();
             }
-            let begin_offset = voxel_offset[n] as i64 + (coord * block_size[n] as u64) as i64;
+            let begin_offset = voxel_offset[n] as i64 + cmp::max(coord, &0) * block_size[n] as i64;
             let end_offset = voxel_offset[n] as i64 + cmp::min(
-                     (coord + 1) * block_size[n] as u64,
-                     dimensions[n]) as i64;
+                     cmp::max(coord + 1, 0) * block_size[n] as i64,
+                     dimensions[n] as i64);
 
             write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
             n = n + 1;
@@ -156,7 +156,7 @@ impl NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position)
     }
@@ -169,7 +169,7 @@ impl NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
         NgPrePromiseEtagReader::block_etag(
             self, path_name, data_attrs, grid_position)
@@ -179,7 +179,7 @@ impl NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
         NgPrePromiseEtagReader::read_block_with_etag(
             self, path_name, data_attrs, grid_position)
@@ -229,7 +229,7 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
         where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
             T: ReflectedType,
@@ -259,7 +259,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         &self,
         path_name: &str,
         _data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<String>, Error = Error>> {
         let mut request_options = RequestInit::new();
         request_options.method("HEAD");
@@ -297,7 +297,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType,
@@ -307,10 +307,24 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         // TODO: Could be nicer
         let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
+        let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
 
         let block_path = self.relative_block_path(path_name, &grid_position,
-                data_attrs.get_block_size(zoom_level), data_attrs.get_voxel_offset(zoom_level),
+                data_attrs.get_block_size(zoom_level), voxel_offset,
                 data_attrs.get_dimensions(zoom_level));
+
+        // At the moment we get a pre-offset grid position passed in and need it to translate into
+        // "real" (unsigned) grid positions by applying the offset.
+        let mut offset_grid_position = GridCoord::new();
+        let mut n = 0;
+        for coord in grid_position {
+            let coord_candidate = voxel_offset[n] as i64 + coord;
+            if coord_candidate < 0 {
+                return Box::new(future::ok(None));
+            }
+            offset_grid_position.push(coord_candidate as u64);
+            n = n + 1;
+        }
 
         let f = self.fetch(&block_path).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
@@ -327,7 +341,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                         Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
                             &buff,
                             &da2,
-                            grid_position).unwrap(),
+                            offset_grid_position).unwrap(),
                             etag))
                     });
                 future::Either::A(to_return)

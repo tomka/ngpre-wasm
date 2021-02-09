@@ -39,7 +39,7 @@ pub trait NgPrePromiseReader {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise;
 
     fn list_attributes(&self, path_name: &str) -> Promise;
@@ -78,7 +78,7 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
 
         data_type_match! {
@@ -109,14 +109,14 @@ pub trait NgPrePromiseEtagReader {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise;
 
     fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise;
 }
 
@@ -125,7 +125,7 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
         let to_return = self.block_etag(path_name, &data_attrs.0, grid_position.into())
             .map(JsValue::from);
@@ -137,7 +137,7 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_position: Vec<u64>,
+        grid_position: Vec<i64>,
     ) -> Promise {
 
         data_type_match! {
@@ -174,7 +174,7 @@ pub trait NgPreAsyncReader {
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
@@ -190,14 +190,14 @@ pub trait NgPreAsyncEtagReader {
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<String>, Error = Error>>;
 
     fn read_block_with_etag<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_position: GridCoord,
+        grid_position: UnboundedGridCoord,
     ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
