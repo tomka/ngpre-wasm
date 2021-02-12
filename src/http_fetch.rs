@@ -311,6 +311,9 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         let block_size = data_attrs.get_block_size(zoom_level);
         let dimensions = data_attrs.get_dimensions(zoom_level);
 
+        let block_path = self.relative_block_path(path_name, &grid_position,
+                block_size, voxel_offset, dimensions);
+
         // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
         // allow catching overflows when data from JavaScript is passed in.
         let mut offset_grid_position = GridCoord::new();
@@ -322,9 +325,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             offset_grid_position.push(coord as u64);
             n = n + 1;
         }
-
-        let block_path = self.relative_block_path(path_name, &grid_position,
-                block_size, voxel_offset, dimensions);
 
         let f = self.fetch(&block_path).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
