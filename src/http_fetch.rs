@@ -91,10 +91,10 @@ impl NgPreHTTPFetch {
             if n > 0 {
                 write!(block_path, "_").unwrap();
             }
-            let begin_offset = voxel_offset[n] as i64 + cmp::max(coord, &0) * block_size[n] as i64;
+            // This assumes 0 <= coord <= grid_size[n].
+            let begin_offset = voxel_offset[n] as i64 + coord * block_size[n] as i64;
             let end_offset = voxel_offset[n] as i64 + cmp::min(
-                     cmp::max(coord + 1, 0) * block_size[n] as i64,
-                     dimensions[n] as i64);
+                     (coord + 1) * block_size[n] as i64, dimensions[n] as i64);
 
             write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
             n = n + 1;
@@ -308,23 +308,23 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         // TODO: Could be nicer
         let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
         let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
+        let block_size = data_attrs.get_block_size(zoom_level);
+        let dimensions = data_attrs.get_dimensions(zoom_level);
 
-        let block_path = self.relative_block_path(path_name, &grid_position,
-                data_attrs.get_block_size(zoom_level), voxel_offset,
-                data_attrs.get_dimensions(zoom_level));
-
-        // At the moment we get a pre-offset grid position passed in and need it to translate into
-        // "real" (unsigned) grid positions by applying the offset.
+        // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
+        // allow catching overflows when data from JavaScript is passed in.
         let mut offset_grid_position = GridCoord::new();
         let mut n = 0;
         for coord in grid_position {
-            let coord_candidate = voxel_offset[n] as i64 + coord;
-            if coord_candidate < 0 {
+            if coord < 0 || coord * block_size[n] as i64 > dimensions[n] as i64  {
                 return Box::new(future::ok(None));
             }
-            offset_grid_position.push(coord_candidate as u64);
+            offset_grid_position.push(coord as u64);
             n = n + 1;
         }
+
+        let block_path = self.relative_block_path(path_name, &grid_position,
+                block_size, voxel_offset, dimensions);
 
         let f = self.fetch(&block_path).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
