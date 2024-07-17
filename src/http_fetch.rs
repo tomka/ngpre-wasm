@@ -78,7 +78,7 @@ impl NgPreHTTPFetch {
         let path = self.get_dataset_attributes_path(path_name);
         let to_return = self
             .fetch_json(&path)
-            .map(|json| json.into_serde().unwrap());
+            .map(|json| serde_wasm_bindgen::from_value(json).unwrap());
 
         map_future_error_rust(to_return)
     }
@@ -202,7 +202,7 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         let path = self.get_dataset_attributes_path(path_name);
         let to_return = self
             .fetch_json(&path)
-            .map(|json| { json.into_serde().unwrap() });
+            .map(|json| { serde_wasm_bindgen::from_value(json).unwrap() });
 
         Box::new(map_future_error_rust(to_return))
     }

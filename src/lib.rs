@@ -97,7 +97,7 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
 
         // TODO: Superfluous conversion from JSON to JsValue to serde to JsValue.
         let to_return = self.list_attributes(path_name)
-            .map(|v| JsValue::from_serde(&v).unwrap());
+            .map(|v| serde_wasm_bindgen::to_value(&v).unwrap());
 
         future_to_promise(map_future_error_wasm(to_return))
     }
@@ -276,11 +276,11 @@ pub mod wrapped {
         }
 
         pub fn to_json(&self) -> JsValue {
-            JsValue::from_serde(self).unwrap()
+            serde_wasm_bindgen::to_value(&self).unwrap()
         }
 
         pub fn from_json(js: &JsValue) -> Self {
-            JsValue::into_serde(js).unwrap()
+            serde_wasm_bindgen::from_value(js.clone()).unwrap()
         }
     }
 }
