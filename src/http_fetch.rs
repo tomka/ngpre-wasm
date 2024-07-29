@@ -31,6 +31,12 @@ impl GlobalProxy {
     }
 }
 
+macro_rules! log {
+    ( $( $t:tt )* ) => {
+        web_sys::console::log_1(&format!( $( $t )* ).into());
+    }
+}
+
 fn self_() -> Result<GlobalProxy, JsValue> {
     let global = js_sys::global();
     if js_sys::eval("typeof WorkerGlobalScope !== 'undefined'")?.as_bool().unwrap() {
@@ -198,11 +204,17 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
 
     fn get_dataset_attributes(&self, path_name: &str) ->
             Box<dyn Future<Item = ngpre::DatasetAttributes, Error = Error>> {
+        utils::set_panic_hook();
 
+        console::log_1(&"get_dataset_attributes".into());
         let path = self.get_dataset_attributes_path(path_name);
         let to_return = self
             .fetch_json(&path)
-            .map(|json| { serde_wasm_bindgen::from_value(json).unwrap() });
+            .map(|json| {
+                let val: ngpre::DatasetAttributes = serde_wasm_bindgen::from_value(json).unwrap();
+                log!("val: {:?}", val);
+                val
+            });
 
         Box::new(map_future_error_rust(to_return))
     }
@@ -303,53 +315,101 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 T: ReflectedType,
     {
 
+        console::log_1(&"read etag block".into());
         let da2 = data_attrs.clone();
 
         // TODO: Could be nicer
         let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
         let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
-        let block_size = data_attrs.get_block_size(zoom_level);
+        let chunk_size = data_attrs.get_block_size(zoom_level);
         let dimensions = data_attrs.get_dimensions(zoom_level);
 
-        let block_path = self.relative_block_path(path_name, &grid_position,
-                block_size, voxel_offset, dimensions);
+        // Handling sharding is handled here, because
+        if data_attrs.is_sharded(zoom_level) {
+            console::log_2(&"sharding format detected at zoom level ".into(), &zoom_level.into());
+            //full_bbox = requested_bbox.expand_to_chunk_size(
+            //  meta.chunk_size(mip), offset=meta.voxel_offset(mip)
+            //)
+            //full_bbox = Bbox.clamp(full_bbox, meta.bounds(mip))
 
-        // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
-        // allow catching overflows when data from JavaScript is passed in.
-        let mut offset_grid_position = GridCoord::new();
-        let mut n = 0;
-        for coord in grid_position {
-            if coord < 0 || coord * block_size[n] as i64 > dimensions[n] as i64  {
-                return Box::new(future::ok(None));
+            // bounds(mip) is dataset size in voxels
+            // grid_size = np.ceil(meta.bounds(mip).size3() / chunk_size).astype(np.uint32)
+            let grid_size = 1;
+            //bounds = meta.bounds(mip)
+            //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
+            let gpts = [grid_position];
+            //morton_codes = compressed_morton_code(gpts, grid_size)
+            let morton_codes = ngpre::compressed_morton_code(gpts, grid_size);
+
+            // Get raw data and send back
+            let progress = false;
+            let decompress = false;
+            let meta = ngpre::PrecomputedMetadata(path_name);
+            let cache = ngpre::CacheService();
+            let spec = data_attrs.get_sharding_spec(zoom_level);
+            let reader = ngpre::ShardReader::new(meta, cache, spec);
+            let io_chunkdata = reader.get_data(morton_codes, data_attrs.get_key(zoom_level),
+                    progress, !decompress);
+            // io_chunkdata = reader.get_data(
+            //      morton_codes, meta.key(mip),
+            //      progress=progress,
+            //      raw=(not decompress),
+            //  )
+
+
+            // Rust-based decoding
+            //code_map = {}
+            //for gridpoint, morton_code in zip(gpts, morton_codes):
+            //  cutout_bbox = Bbox(
+            //  bounds.minpt + gridpoint * chunk_size,
+            //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
+            //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
+            let f = future::ok(None);
+            Box::new(map_future_error_rust(f))
+        } else {
+            let block_path = self.relative_block_path(path_name, &grid_position,
+                    chunk_size, voxel_offset, dimensions);
+
+            // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
+            // allow catching overflows when data from JavaScript is passed in.
+            let mut offset_grid_position = GridCoord::new();
+            let mut n = 0;
+            for coord in grid_position {
+                if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
+                    return Box::new(future::ok(None));
+                }
+                offset_grid_position.push(coord as u64);
+                n = n + 1;
             }
-            offset_grid_position.push(coord as u64);
-            n = n + 1;
+
+            console::log_1(&"read_block_with etag".into());
+            console::log_1(&block_path.clone().into());
+
+            let f = self.fetch(&block_path).and_then(|resp_value| {
+                assert!(resp_value.is_instance_of::<Response>());
+                let resp: Response = resp_value.dyn_into().unwrap();
+
+                if resp.ok() {
+                    let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
+                    let to_return = JsFuture::from(resp.array_buffer().unwrap())
+                        .map(move |arrbuff_value| {
+                            assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
+                            let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                            let buff = typebuff.to_vec();
+
+                            Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                                &buff,
+                                &da2,
+                                offset_grid_position).unwrap(),
+                                etag))
+                        });
+                    future::Either::A(to_return)
+                } else  {
+                    future::Either::B(future::ok(None))
+                }
+            });
+
+            Box::new(map_future_error_rust(f))
         }
-
-        let f = self.fetch(&block_path).and_then(|resp_value| {
-            assert!(resp_value.is_instance_of::<Response>());
-            let resp: Response = resp_value.dyn_into().unwrap();
-
-            if resp.ok() {
-                let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-                let to_return = JsFuture::from(resp.array_buffer().unwrap())
-                    .map(move |arrbuff_value| {
-                        assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                        let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                        let buff = typebuff.to_vec();
-
-                        Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                            &buff,
-                            &da2,
-                            offset_grid_position).unwrap(),
-                            etag))
-                    });
-                future::Either::A(to_return)
-            } else  {
-                future::Either::B(future::ok(None))
-            }
-        });
-
-        Box::new(map_future_error_rust(f))
     }
 }

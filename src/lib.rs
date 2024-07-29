@@ -24,7 +24,6 @@ use ngpre::{data_type_match, data_type_rstype_replace};
 
 pub mod http_fetch;
 
-
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
     fn get_version(&self) -> Promise;
@@ -257,8 +256,8 @@ pub mod wrapped {
             self.0.get_data_type().to_string()
         }
 
-        pub fn get_compression(&self) -> String {
-            self.0.get_compression().to_string()
+        pub fn get_compression(&self, zoom_level: usize) -> String {
+            self.0.get_compression(zoom_level).to_string()
         }
 
         pub fn get_ndim(&self, zoom_level: usize) -> usize {
