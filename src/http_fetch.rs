@@ -89,7 +89,7 @@ impl NgPreHTTPFetch {
         map_future_error_rust(to_return)
     }
 
-    fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
+    fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i64], dimensions: &[u64]) -> String {
         let mut block_path = path_name.to_owned();
         let mut n = 0;
         write!(block_path, "/").unwrap();
@@ -98,8 +98,9 @@ impl NgPreHTTPFetch {
                 write!(block_path, "_").unwrap();
             }
             // This assumes 0 <= coord <= grid_size[n].
-            let begin_offset = voxel_offset[n] as i64 + coord * block_size[n] as i64;
-            let end_offset = voxel_offset[n] as i64 + cmp::min(
+            // write!(block_path, "x{}x{}x{}x", voxel_offset[n], coord, block_size[n]).unwrap();
+            let begin_offset = voxel_offset[n] + coord * block_size[n] as i64;
+            let end_offset = voxel_offset[n] + cmp::min(
                      (coord + 1) * block_size[n] as i64, dimensions[n] as i64);
 
             write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
@@ -339,17 +340,20 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
             let gpts = [grid_position];
             //morton_codes = compressed_morton_code(gpts, grid_size)
-            let morton_codes = ngpre::compressed_morton_code(gpts, grid_size);
+            let morton_codes = ngpre::compressed_morton_code(gpts, grid_size).unwrap();
 
             // Get raw data and send back
             let progress = false;
             let decompress = false;
-            let meta = ngpre::PrecomputedMetadata(path_name);
-            let cache = ngpre::CacheService();
-            let spec = data_attrs.get_sharding_spec(zoom_level);
-            let reader = ngpre::ShardReader::new(meta, cache, spec);
-            let io_chunkdata = reader.get_data(morton_codes, data_attrs.get_key(zoom_level),
-                    progress, !decompress);
+            let parallel = 0;
+            let meta = ngpre::PrecomputedMetadata {
+                cloudpath: path_name.to_string(),
+            };
+            let cache = ngpre::CacheService {};
+            let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
+            let reader = ngpre::ShardReader::new(&meta, &cache, &spec, None, None);
+            let io_chunkdata = reader.get_data(morton_codes, Some(data_attrs.get_key(zoom_level)),
+                    Some(progress), Some(parallel), Some(!decompress));
             // io_chunkdata = reader.get_data(
             //      morton_codes, meta.key(mip),
             //      progress=progress,

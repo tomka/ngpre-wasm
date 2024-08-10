@@ -248,7 +248,7 @@ pub mod wrapped {
             self.0.get_block_size(zoom_level).to_owned()
         }
 
-        pub fn get_voxel_offset(&self, zoom_level: usize) -> Vec<i32> {
+        pub fn get_voxel_offset(&self, zoom_level: usize) -> Vec<i64> {
             self.0.get_voxel_offset(zoom_level).to_owned()
         }
 
