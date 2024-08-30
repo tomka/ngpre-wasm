@@ -46,6 +46,7 @@ pub trait NgPrePromiseReader {
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
     fn get_version(&self) -> Promise {
+        utils::set_panic_hook();
         let to_return = self.get_version()
             .map(|v| JsValue::from(wrapped::Version(v)));
 
