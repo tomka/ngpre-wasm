@@ -5,6 +5,7 @@ use std::cmp;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use future::TryFutureExt;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -65,7 +66,7 @@ pub struct NgPreHTTPFetch {
 
 impl NgPreHTTPFetch {
     fn fetch(&self, path_name: &str) -> JsFuture {
-        let mut request_options = RequestInit::new();
+        let request_options = RequestInit::new();
         request_options.set_method("GET");
         request_options.set_mode(RequestMode::Cors);
 
@@ -78,7 +79,7 @@ impl NgPreHTTPFetch {
         JsFuture::from(req_promise)
     }
 
-    fn fetch_json(&self, path_name: &str) -> impl Future<Item = JsValue, Error = JsValue> {
+    async fn fetch_json(&self, path_name: &str) -> JsValue {
         self.fetch(path_name).and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
             let resp: Response = resp_value.dyn_into()?;
@@ -89,7 +90,7 @@ impl NgPreHTTPFetch {
         })
     }
 
-    fn get_attributes(&self, path_name: &str) -> impl Future<Item = serde_json::Value, Error = Error> {
+    async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
         let to_return = self
@@ -271,17 +272,16 @@ impl DataLoader for HTTPDataLoader {
 }
 
 impl NgPreAsyncReader for NgPreHTTPFetch {
-    fn get_version(&self) -> Box<dyn Future<Item = ngpre::Version, Error = Error>> {
-        let to_return = self.get_attributes("")
-            .and_then(|_attr| {
-                Ok(ngpre::Version::from_str(&"2.3.0").unwrap())
-            });
+    async fn get_version(&self) -> ngpre::Version {
+        let to_return = self.get_attributes("").map(|_attr| {
+                ngpre::Version::from_str(&"2.3.0").unwrap()
+            }).await;
 
-        Box::new(to_return)
+        to_return
     }
 
-    fn get_dataset_attributes(&self, path_name: &str) ->
-            Box<dyn Future<Item = ngpre::DatasetAttributes, Error = Error>> {
+    async fn get_dataset_attributes(&self, path_name: &str) ->
+            ngpre::DatasetAttributes {
         utils::set_panic_hook();
 
         console::log_1(&"get_dataset_attributes".into());
@@ -294,63 +294,63 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
                 val
             });
 
-        Box::new(map_future_error_rust(to_return))
+        to_return.await
     }
 
-    fn exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>> {
-        let to_return = self.fetch(path_name).and_then(|resp_value| {
+    async fn exists(&self, path_name: &str) -> bool {
+        let to_return = self.fetch(path_name).map_ok(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
             let resp: Response = resp_value.dyn_into().unwrap();
 
-            future::ok(resp.ok())
+            resp.ok()
         });
 
-        Box::new(map_future_error_rust(to_return))
+        map_future_error_rust(to_return)
     }
 
     // Override the default NgPreAsyncReader impl to not require the GET on the
     // dataset directory path to be 200.
-    fn dataset_exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>> {
+    async fn dataset_exists(&self, path_name: &str) -> bool {
         let path = self.get_dataset_attributes_path(path_name);
-        NgPreAsyncReader::exists(self, &path)
+        NgPreAsyncReader::exists(self, &path).await
     }
 
-    fn read_block<T>(
+    async fn read_block<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
+    ) -> Option<VecDataBlock<T>>
         where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
             T: ReflectedType,
     {
 
-        Box::new(NgPreAsyncEtagReader::read_block_with_etag(
+        NgPreAsyncEtagReader::read_block_with_etag(
                 self, path_name, data_attrs, grid_position)
-            .map(|maybe_block| maybe_block.map(|(block, _etag)| block)))
+            .map(|maybe_block| maybe_block.map(|(block, _etag)| block))
     }
 
-    fn list(&self, _path_name: &str) -> Box<dyn Future<Item = Vec<String>, Error = Error>> {
+    async fn list(&self, _path_name: &str) -> Vec<String> {
         // TODO: Not implemented because remote paths are not listable.
         unimplemented!()
     }
 
-    fn list_attributes(
+    async fn list_attributes(
         &self,
         path_name: &str,
-    ) -> Box<dyn Future<Item = serde_json::Value, Error = Error>> {
+    ) -> serde_json::Value {
 
-        Box::new(self.get_attributes(path_name))
+        self.get_attributes(path_name).await
     }
 }
 
 impl NgPreAsyncEtagReader for NgPreHTTPFetch {
-    fn block_etag(
+    async fn block_etag(
         &self,
         path_name: &str,
         _data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<String>, Error = Error>> {
+    ) -> Option<String> {
         let mut request_options = RequestInit::new();
         request_options.set_method("HEAD");
         request_options.set_mode(RequestMode::Cors);
@@ -371,7 +371,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         let req_promise = self_().unwrap().fetch_with_request(&req);
 
         let f = JsFuture::from(req_promise)
-            .map(|resp_value| {
+            .map_ok(|resp_value| {
                 assert!(resp_value.is_instance_of::<Response>());
                 let resp: Response = resp_value.dyn_into().unwrap();
 
@@ -382,15 +382,15 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 }
             });
 
-        Box::new(map_future_error_rust(f))
+        map_future_error_rust(f)
     }
 
-    fn read_block_with_etag<T>(
+    async fn read_block_with_etag<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
+    ) -> Option<(VecDataBlock<T>, Option<String>)>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType,
     {
@@ -416,7 +416,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let mut n = 0;
             for coord in grid_position {
                 if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                    return Box::new(future::ok(None));
+                    return None;
                 }
                 offset_grid_position.push(coord as u64);
                 n = n + 1;
@@ -508,7 +508,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
             let f = future::ok(None);
-            Box::new(map_future_error_rust(f))
+            map_future_error_rust(f)
         } else {
             let block_path = self.relative_block_path(path_name, &grid_position,
                     chunk_size, voxel_offset, dimensions);
@@ -519,7 +519,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let mut n = 0;
             for coord in grid_position {
                 if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                    return Box::new(future::ok(None));
+                    return None;
                 }
                 offset_grid_position.push(coord as u64);
                 n = n + 1;
@@ -535,7 +535,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 if resp.ok() {
                     let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
                     let to_return = JsFuture::from(resp.array_buffer().unwrap())
-                        .map(move |arrbuff_value| {
+                        .map_ok(move |arrbuff_value| {
                             assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
                             let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
                             let buff = typebuff.to_vec();
@@ -548,11 +548,11 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                         });
                     future::Either::A(to_return)
                 } else {
-                    future::Either::B(future::ok(None))
+                    future::Either::B(None)
                 }
             });
 
-            Box::new(map_future_error_rust(f))
+            map_future_error_rust(f)
         }
     }
 }

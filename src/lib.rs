@@ -1,4 +1,4 @@
-use futures;
+use futures::{self, FutureExt};
 use js_sys;
 use ngpre;
 use serde_json;
@@ -48,14 +48,14 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
     fn get_version(&self) -> Promise {
         utils::set_panic_hook();
         let to_return = self.get_version()
-            .map(|v| JsValue::from(wrapped::Version(v)));
+            .map(|v| Ok(JsValue::from(wrapped::Version(v))));
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 
     fn get_dataset_attributes(&self, path_name: &str) -> Promise {
         let to_return = self.get_dataset_attributes(path_name)
-            .map(|da| JsValue::from(wrapped::DatasetAttributes(da)));
+            .map(|da| Ok(JsValue::from(wrapped::DatasetAttributes(da))));
 
         future_to_promise(map_future_error_wasm(to_return))
     }
@@ -155,66 +155,64 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
 /// erasing it with `Promise`) and for easier potential future compatibility
 /// with an NgPre core async trait.
 pub trait NgPreAsyncReader {
-    fn get_version(&self) -> Box<dyn Future<Item = ngpre::Version, Error = Error>>;
+    async fn get_version(&self) -> ngpre::Version;
 
-    fn get_dataset_attributes(&self, path_name: &str) ->
-        Box<dyn Future<Item = ngpre::DatasetAttributes, Error = Error>>;
+    async fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes;
 
-    fn exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>>;
+    async fn exists(&self, path_name: &str) -> bool;
 
-    fn dataset_exists(&self, path_name: &str) -> Box<dyn Future<Item = bool, Error = Error>> {
-        Box::new(self.exists(path_name).join(
-            self.get_dataset_attributes(path_name)
-                .map(|_| true)
-                .or_else(|_| futures::future::ok(false))
-        ).map(|(exists, has_attr)| exists && has_attr))
+    // TODO: FIX ME
+    async fn dataset_exists(&self, path_name: &str) -> bool {
+        self.get_dataset_attributes(path_name)
+            .map(|_| true).map(|x| x && x).await
     }
 
-    fn read_block<T>(
+    async fn read_block<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<VecDataBlock<T>>, Error = Error>>
+    ) -> Option<VecDataBlock<T>>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
 
-    fn list(&self, path_name: &str) -> Box<dyn Future<Item = Vec<String>, Error = Error>>;
+    async fn list(&self, path_name: &str) -> Vec<String>;
 
-    fn list_attributes(&self, path_name: &str) -> Box<dyn Future<Item = serde_json::Value, Error = Error>>;
+    async fn list_attributes(&self, path_name: &str) -> serde_json::Value;
 }
 
 
 pub trait NgPreAsyncEtagReader {
-    fn block_etag(
+    async fn block_etag(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<String>, Error = Error>>;
+    ) -> Option<String>;
 
-    fn read_block_with_etag<T>(
+    async fn read_block_with_etag<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
-    ) -> Box<dyn Future<Item = Option<(VecDataBlock<T>, Option<String>)>, Error = Error>>
+    ) -> Option<(VecDataBlock<T>, Option<String>)>
             where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
                 T: ReflectedType;
 }
 
-
-fn map_future_error_rust<F: Future<Item = T, Error = JsValue>, T>(future: F)
-        -> impl Future<Item = T, Error = Error> {
-    future.map_err(convert_jsvalue_error)
+async fn map_future_error_rust<F, T>(future: F) -> Result<T, Error>
+where
+    F: Future<Output = Result<T, JsValue>>
+{
+    future.map(convert_jsvalue_error)
 }
 
-fn map_future_error_wasm<F: Future<Item = T, Error = Error>, T>(future: F)
-        -> impl Future<Item = T, Error = JsValue> {
-    future.map_err(|error| {
-        let js_error = js_sys::Error::new(&format!("{:?}", error));
-        JsValue::from(js_error)
-    })
+async fn map_future_error_wasm<F, T>(future: F) -> Result<T, JsValue>
+where
+    F: Future<Output = Result<T, JsValue>>
+{
+    let js_error = js_sys::Error::new(&format!("{:?}", future.await.unwrap_err()));
+    Err(JsValue::from(future))
 }
 
 fn convert_jsvalue_error(error: JsValue) -> Error {
