@@ -8,6 +8,7 @@ use web_sys;
 
 mod utils;
 
+use std::error;
 use std::io::{
     Error,
     ErrorKind,
@@ -200,11 +201,18 @@ pub trait NgPreAsyncEtagReader {
                 T: ReflectedType;
 }
 
-async fn map_future_error_rust<F, T>(future: F) -> Result<T, Error>
+async fn map_future_error_rust<F, T>(future: F) -> Result<T, Box<dyn error::Error>>
 where
     F: Future<Output = Result<T, JsValue>>
 {
-    future.map(convert_jsvalue_error)
+    match future.await {
+        Ok(val) => Ok(val),
+        Err(js_value) => {
+            // Convert JsValue into a more useful Rust error type
+            let err = convert_jsvalue_error(js_value);
+            Err(Box::new(err))
+        }
+    }
 }
 
 async fn map_future_error_wasm<F, T>(future: F) -> Result<T, JsValue>
