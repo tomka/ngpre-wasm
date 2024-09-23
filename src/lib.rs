@@ -26,13 +26,13 @@ pub mod http_fetch;
 
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
-    fn get_version(&self) -> Promise;
+    async fn get_version(&self) -> Promise;
 
-    fn get_dataset_attributes(&self, path_name: &str) -> Promise;
+    async fn get_dataset_attributes(&self, path_name: &str) -> Promise;
 
-    fn exists(&self, path_name: &str) -> Promise;
+    async fn exists(&self, path_name: &str) -> Promise;
 
-    fn dataset_exists(&self, path_name: &str) -> Promise;
+    async fn dataset_exists(&self, path_name: &str) -> Promise;
 
     fn read_block(
         &self,
@@ -41,37 +41,45 @@ pub trait NgPrePromiseReader {
         grid_position: Vec<i64>,
     ) -> Promise;
 
-    fn list_attributes(&self, path_name: &str) -> Promise;
+    async fn list_attributes(&self, path_name: &str) -> Promise;
 }
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
-    fn get_version(&self) -> Promise {
+    async fn get_version(&self) -> Promise {
         utils::set_panic_hook();
-        let to_return = self.get_version()
-            .map(|v| Ok(JsValue::from(wrapped::Version(v))));
+        let version = self.get_version().await;
+        let to_return = async move {
+            Ok(JsValue::from(wrapped::Version(version)))
+        };
 
         future_to_promise(to_return)
     }
 
-    fn get_dataset_attributes(&self, path_name: &str) -> Promise {
-        let to_return = self.get_dataset_attributes(path_name)
-            .map(|da| Ok(JsValue::from(wrapped::DatasetAttributes(da))));
+    async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
+        let attrs = self.get_dataset_attributes(path_name).await;
+        let to_return = async move {
+            Ok(JsValue::from(wrapped::DatasetAttributes(attrs)))
+        };
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 
-    fn exists(&self, path_name: &str) -> Promise {
-        let to_return = self.exists(path_name)
-            .map(JsValue::from);
+    async fn exists(&self, path_name: &str) -> Promise {
+        let exists = self.exists(path_name).await;
+        let to_return = async move {
+            Ok(JsValue::from(exists))
+        };
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 
-    fn dataset_exists(&self, path_name: &str) -> Promise {
-        let to_return = self.dataset_exists(path_name)
-            .map(JsValue::from);
+    async fn dataset_exists(&self, path_name: &str) -> Promise {
+        let exists = self.dataset_exists(path_name).await;
+        let to_return = async move {
+            Ok(JsValue::from(exists))
+        };
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 
     fn read_block(
@@ -80,32 +88,34 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(map_future_error_wasm(
+            future_to_promise(
                 self.read_block::<RsType>(path_name, &data_attrs.0, grid_position.into())
                     .map(|maybe_block| JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
+                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from))))
         }
     }
 
-    fn list_attributes(
+    async fn list_attributes(
         &self,
         path_name: &str,
     ) -> Promise {
 
         // TODO: Superfluous conversion from JSON to JsValue to serde to JsValue.
-        let to_return = self.list_attributes(path_name)
-            .map(|v| serde_wasm_bindgen::to_value(&v).unwrap());
+        let list_attrs = self.list_attributes(path_name).await;
+        let to_return = async move {
+            let val = serde_wasm_bindgen::to_value(&list_attrs).unwrap();
+            Ok(JsValue::from(val))
+        };
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 }
 
 
 pub trait NgPrePromiseEtagReader {
-    fn block_etag(
+    async fn block_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
@@ -121,16 +131,18 @@ pub trait NgPrePromiseEtagReader {
 }
 
 impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
-    fn block_etag(
+    async fn block_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
-        let to_return = self.block_etag(path_name, &data_attrs.0, grid_position.into())
-            .map(JsValue::from);
+        let etag = self.block_etag(path_name, &data_attrs.0, grid_position.into()).await;
+        let to_return = async move {
+            Ok(JsValue::from(etag.unwrap_or_default()))
+        };
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 
     fn read_block_with_etag(
@@ -139,13 +151,12 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(map_future_error_wasm(
+            future_to_promise(
                 self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into())
                     .map(|maybe_block| JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
+                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from))))
         }
     }
 }
@@ -200,32 +211,10 @@ pub trait NgPreAsyncEtagReader {
                 T: ReflectedType;
 }
 
-async fn map_future_error_rust<F, T>(future: F) -> Result<T, Box<dyn error::Error>>
-where
-    F: Future<Output = Result<T, JsValue>>
-{
-    match future.await {
-        Ok(val) => Ok(val),
-        Err(js_value) => {
-            // Convert JsValue into a more useful Rust error type
-            let err = convert_jsvalue_error(js_value);
-            Err(Box::new(err))
-        }
-    }
-}
-
-async fn map_future_error_wasm<F, T>(future: F) -> Result<T, JsValue>
-where
-    F: Future<Output = Result<T, JsValue>>
-{
-    let js_error = js_sys::Error::new(&format!("{:?}", future.await.unwrap_err()));
-    Err(JsValue::from(future))
-}
 
 fn convert_jsvalue_error(error: JsValue) -> Error {
     Error::new(std::io::ErrorKind::Other, format!("{:?}", error))
 }
-
 
 pub mod wrapped {
     use super::*;

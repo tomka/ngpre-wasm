@@ -1,4 +1,4 @@
-use std::{fmt::Write};
+use std::fmt::Write;
 use std::str::FromStr;
 use std::cmp;
 use futures::future::{self, FutureExt, Either};
@@ -92,12 +92,8 @@ impl NgPreHTTPFetch {
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
-        let to_return = self.fetch_json(&path)
-            .then(|json| {
-                serde_wasm_bindgen::from_value(json)
-            });
-
-        map_future_error_rust(to_return).await.unwrap()
+        let js_val = self.fetch_json(&path).await;
+        serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
     fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i64], dimensions: &[u64]) -> String {
@@ -147,27 +143,27 @@ impl NgPreHTTPFetch {
             future::ok(JsValue::from(reader))
         });
 
-        future_to_promise(map_future_error_wasm(to_return))
+        future_to_promise(to_return)
     }
 }
 
 /// Delegations to expose NgPrePromiseReader trait to WASM.
 #[wasm_bindgen]
 impl NgPreHTTPFetch {
-    pub fn get_version(&self) -> Promise {
-        NgPrePromiseReader::get_version(self)
+    pub async fn get_version(&self) -> Promise {
+        NgPrePromiseReader::get_version(self).await
     }
 
-    pub fn get_dataset_attributes(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::get_dataset_attributes(self, path_name)
+    pub async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
+        NgPrePromiseReader::get_dataset_attributes(self, path_name).await
     }
 
-    pub fn exists(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::exists(self, path_name)
+    pub async fn exists(&self, path_name: &str) -> Promise {
+        NgPrePromiseReader::exists(self, path_name).await
     }
 
-    pub fn dataset_exists(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::dataset_exists(self, path_name)
+    pub async fn dataset_exists(&self, path_name: &str) -> Promise {
+        NgPrePromiseReader::dataset_exists(self, path_name).await
     }
 
     pub fn read_block(
@@ -179,18 +175,18 @@ impl NgPreHTTPFetch {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position)
     }
 
-    pub fn list_attributes(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::list_attributes(self, path_name)
+    pub async fn list_attributes(&self, path_name: &str) -> Promise {
+        NgPrePromiseReader::list_attributes(self, path_name).await
     }
 
-    pub fn block_etag(
+    pub async fn block_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
         NgPrePromiseEtagReader::block_etag(
-            self, path_name, data_attrs, grid_position)
+            self, path_name, data_attrs, grid_position).await
     }
 
     pub fn read_block_with_etag(
@@ -298,14 +294,12 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
     }
 
     async fn exists(&self, path_name: &str) -> bool {
-        let to_return = self.fetch(path_name).map_ok(|resp_value| {
+        self.fetch(path_name).map_ok(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
             let resp: Response = resp_value.dyn_into().unwrap();
 
             resp.ok()
-        });
-
-        map_future_error_rust(to_return).await.unwrap()
+        }).await.unwrap()
     }
 
     // Override the default NgPreAsyncReader impl to not require the GET on the
@@ -370,7 +364,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         console::log_1(&block_path.into());
         let req_promise = self_().unwrap().fetch_with_request(&req);
 
-        let f = JsFuture::from(req_promise)
+        JsFuture::from(req_promise)
             .map_ok(|resp_value| {
                 assert!(resp_value.is_instance_of::<Response>());
                 let resp: Response = resp_value.dyn_into().unwrap();
@@ -380,9 +374,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 } else {
                     None
                 }
-            });
-
-        map_future_error_rust(f).await.unwrap()
+            }).await.unwrap()
     }
 
     async fn read_block_with_etag<T>(
@@ -508,8 +500,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
 
-            let f = future::ok(None);
-            map_future_error_rust(f).await.unwrap()
+            future::ok(None).await.unwrap()
         } else {
             let block_path = self.relative_block_path(path_name, &grid_position,
                     chunk_size, voxel_offset, dimensions);
@@ -529,7 +520,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             console::log_1(&"read_block_with etag".into());
             console::log_1(&block_path.clone().into());
 
-            let f = self.fetch(&block_path).and_then(|resp_value| {
+            self.fetch(&block_path).and_then(|resp_value| {
                 assert!(resp_value.is_instance_of::<Response>());
                 let resp: Response = resp_value.dyn_into().unwrap();
 
@@ -551,9 +542,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 } else {
                     Either::Right(future::ok(None))
                 }
-            });
-
-            map_future_error_rust(f).await.unwrap()
+            }).await.unwrap()
         }
     }
 }
