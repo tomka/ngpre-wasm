@@ -1,4 +1,4 @@
-use futures::{self, FutureExt};
+use futures::{self, future, Future, FutureExt};
 use js_sys;
 use ngpre;
 use serde_json;
@@ -15,7 +15,6 @@ use std::io::{
 };
 
 use js_sys::Promise;
-use futures::{future, Future};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
