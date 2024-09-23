@@ -1,11 +1,12 @@
-use std::fmt::Write;
+use std::{fmt::Write};
 use std::str::FromStr;
 use std::cmp;
+use futures::future::{self, FutureExt, Either};
+use futures::TryFutureExt;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use future::TryFutureExt;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -80,24 +81,23 @@ impl NgPreHTTPFetch {
     }
 
     async fn fetch_json(&self, path_name: &str) -> JsValue {
-        self.fetch(path_name).and_then(|resp_value| {
+        self.fetch(path_name).await.and_then(|resp_value| {
             assert!(resp_value.is_instance_of::<Response>());
             let resp: Response = resp_value.dyn_into()?;
 
             resp.json()
-        }).and_then(|json_value: Promise| {
-            JsFuture::from(json_value)
-        })
+        }).unwrap().into()
     }
 
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
-        let to_return = self
-            .fetch_json(&path)
-            .map(|json| serde_wasm_bindgen::from_value(json).unwrap());
+        let to_return = self.fetch_json(&path)
+            .then(|json| {
+                serde_wasm_bindgen::from_value(json)
+            });
 
-        map_future_error_rust(to_return)
+        map_future_error_rust(to_return).await.unwrap()
     }
 
     fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i64], dimensions: &[u64]) -> String {
@@ -305,7 +305,7 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
             resp.ok()
         });
 
-        map_future_error_rust(to_return)
+        map_future_error_rust(to_return).await.unwrap()
     }
 
     // Override the default NgPreAsyncReader impl to not require the GET on the
@@ -327,7 +327,7 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
 
         NgPreAsyncEtagReader::read_block_with_etag(
                 self, path_name, data_attrs, grid_position)
-            .map(|maybe_block| maybe_block.map(|(block, _etag)| block))
+            .map(|maybe_block| maybe_block.map(|(block, _etag)| block)).await
     }
 
     async fn list(&self, _path_name: &str) -> Vec<String> {
@@ -382,7 +382,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 }
             });
 
-        map_future_error_rust(f)
+        map_future_error_rust(f).await.unwrap()
     }
 
     async fn read_block_with_etag<T>(
@@ -507,8 +507,9 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  bounds.minpt + gridpoint * chunk_size,
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
+
             let f = future::ok(None);
-            map_future_error_rust(f)
+            map_future_error_rust(f).await.unwrap()
         } else {
             let block_path = self.relative_block_path(path_name, &grid_position,
                     chunk_size, voxel_offset, dimensions);
@@ -546,13 +547,13 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                                 offset_grid_position).unwrap(),
                                 etag))
                         });
-                    future::Either::A(to_return)
+                    Either::Left(to_return)
                 } else {
-                    future::Either::B(None)
+                    Either::Right(future::ok(None))
                 }
             });
 
-            map_future_error_rust(f)
+            map_future_error_rust(f).await.unwrap()
         }
     }
 }
