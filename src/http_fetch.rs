@@ -129,19 +129,17 @@ impl NgPreHTTPFetch {
 
 #[wasm_bindgen]
 impl NgPreHTTPFetch {
-    pub fn open(base_path: &str) -> Promise {
+    pub async fn open(base_path: &str) -> Promise {
         let reader = NgPreHTTPFetch {
             base_path: base_path.into(),
         };
 
-        let to_return = NgPreAsyncReader::get_version(&reader).and_then(|version| {
-
-            if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
-                return future::err(Error::new(ErrorKind::Other, "TODO: Incompatible version"))
-            }
-
+        let version = NgPreAsyncReader::get_version(&reader).await;
+        let to_return = if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
+            future::err(JsValue::from("TODO: Incompatible version"))
+        } else {
             future::ok(JsValue::from(reader))
-        });
+        };
 
         future_to_promise(to_return)
     }
