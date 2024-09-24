@@ -498,7 +498,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
 
-            future::ok(None).await.unwrap()
+            future::ok::<Option<(SliceDataBlock<T, Vec<T>>, Option<String>)>, Option<String>>(None).await.unwrap()
         } else {
             let block_path = self.relative_block_path(path_name, &grid_position,
                     chunk_size, voxel_offset, dimensions);
