@@ -92,8 +92,8 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
             data_attrs.0.get_data_type(),
             future_to_promise(
                 self.read_block::<RsType>(path_name, &data_attrs.0, grid_position.into())
-                    .map(|maybe_block| JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from))))
+                    .map(|maybe_block| Ok(JsValue::from(
+                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
         }
     }
 
@@ -155,8 +155,8 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
             data_attrs.0.get_data_type(),
             future_to_promise(
                 self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into())
-                    .map(|maybe_block| JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from))))
+                    .map(|maybe_block| Ok(JsValue::from(
+                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
         }
     }
 }
