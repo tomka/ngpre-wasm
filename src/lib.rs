@@ -211,11 +211,6 @@ pub trait NgPreAsyncEtagReader {
                 T: ReflectedType;
 }
 
-
-fn convert_jsvalue_error(error: JsValue) -> Error {
-    Error::new(std::io::ErrorKind::Other, format!("{:?}", error))
-}
-
 pub mod wrapped {
     use super::*;
 
