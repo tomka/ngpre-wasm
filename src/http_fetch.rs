@@ -220,7 +220,7 @@ impl DataLoader for HTTPDataLoader {
             let full_path = path_join(vec![&path, &request.0]).unwrap();
             console::log_1(&format!("Requesting {:?}", full_path).into());
 
-            let mut request_options = RequestInit::new();
+            let request_options = RequestInit::new();
             request_options.set_method("GET");
             request_options.set_mode(RequestMode::Cors);
 
@@ -228,7 +228,7 @@ impl DataLoader for HTTPDataLoader {
                 &full_path,
                 &request_options).unwrap();
 
-            req.headers().set("Range",
+            let _ = req.headers().set("Range",
                 &format!("bytes={}-{}", request.1, request.2));
 
             console::log_1(&format!("Request: {:?}", req).into());

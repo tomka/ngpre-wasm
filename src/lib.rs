@@ -1,4 +1,4 @@
-use futures::{self, future, Future, FutureExt};
+use futures::{self, future, FutureExt};
 use js_sys;
 use ngpre;
 use serde_json;
@@ -8,11 +8,7 @@ use web_sys;
 
 mod utils;
 
-use std::error;
-use std::io::{
-    Error,
-    ErrorKind,
-};
+use std::io::Error;
 
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
@@ -24,6 +20,7 @@ use ngpre::{data_type_match, data_type_rstype_replace};
 
 pub mod http_fetch;
 
+#[allow(async_fn_in_trait)]
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
     async fn get_version(&self) -> Promise;
@@ -34,7 +31,7 @@ pub trait NgPrePromiseReader {
 
     async fn dataset_exists(&self, path_name: &str) -> Promise;
 
-    fn read_block(
+    async fn read_block(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
@@ -82,18 +79,21 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         future_to_promise(to_return)
     }
 
-    fn read_block(
+    async fn read_block(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
+        // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
+        // function scope.
+        let to_return = self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
+            Ok(JsValue::from(val.unwrap().into_data()))
+        }).await.clone();
+
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(
-                self.read_block::<RsType>(path_name, &data_attrs.0, grid_position.into())
-                    .map(|maybe_block| Ok(JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
+            future_to_promise(future::ready(to_return))
         }
     }
 
@@ -114,6 +114,7 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
 }
 
 
+#[allow(async_fn_in_trait)]
 pub trait NgPrePromiseEtagReader {
     async fn block_etag(
         &self,
@@ -122,7 +123,7 @@ pub trait NgPrePromiseEtagReader {
         grid_position: Vec<i64>,
     ) -> Promise;
 
-    fn read_block_with_etag(
+    async fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
@@ -145,18 +146,21 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         future_to_promise(to_return)
     }
 
-    fn read_block_with_etag(
+    async fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
+        // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
+        // function scope.
+        let to_return = self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<(ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)>| {
+            Ok(JsValue::from(val.unwrap().0.into_data()))
+        }).await.clone();
+
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(
-                self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into())
-                    .map(|maybe_block| Ok(JsValue::from(
-                        maybe_block.map(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from)))))
+            future_to_promise(future::ready(to_return))
         }
     }
 }
@@ -165,6 +169,7 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
 /// This trait exists to preserve type information between calls (rather than
 /// erasing it with `Promise`) and for easier potential future compatibility
 /// with an NgPre core async trait.
+#[allow(async_fn_in_trait)]
 pub trait NgPreAsyncReader {
     async fn get_version(&self) -> ngpre::Version;
 
@@ -193,6 +198,7 @@ pub trait NgPreAsyncReader {
 }
 
 
+#[allow(async_fn_in_trait)]
 pub trait NgPreAsyncEtagReader {
     async fn block_etag(
         &self,
