@@ -164,13 +164,13 @@ impl NgPreHTTPFetch {
         NgPrePromiseReader::dataset_exists(self, path_name).await
     }
 
-    pub fn read_block(
+    pub async fn read_block(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
-        NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position)
+        NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position).await
     }
 
     pub async fn list_attributes(&self, path_name: &str) -> Promise {
@@ -187,14 +187,14 @@ impl NgPreHTTPFetch {
             self, path_name, data_attrs, grid_position).await
     }
 
-    pub fn read_block_with_etag(
+    pub async fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> Promise {
         NgPrePromiseEtagReader::read_block_with_etag(
-            self, path_name, data_attrs, grid_position)
+            self, path_name, data_attrs, grid_position).await
     }
 }
 
@@ -343,7 +343,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         _data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<String> {
-        let mut request_options = RequestInit::new();
+        let request_options = RequestInit::new();
         request_options.set_method("HEAD");
         request_options.set_mode(RequestMode::Cors);
 
