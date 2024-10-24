@@ -96,7 +96,7 @@ impl NgPreHTTPFetch {
         serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
-    fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i64], dimensions: &[u64]) -> String {
+    fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
         let mut block_path = path_name.to_owned();
         let mut n = 0;
         write!(block_path, "/").unwrap();
@@ -106,8 +106,8 @@ impl NgPreHTTPFetch {
             }
             // This assumes 0 <= coord <= grid_size[n].
             // write!(block_path, "x{}x{}x{}x", voxel_offset[n], coord, block_size[n]).unwrap();
-            let begin_offset = voxel_offset[n] + coord * block_size[n] as i64;
-            let end_offset = voxel_offset[n] + cmp::min(
+            let begin_offset = voxel_offset[n] as i64 + coord * block_size[n] as i64;
+            let end_offset = voxel_offset[n] as i64 + cmp::min(
                      (coord + 1) * block_size[n] as i64, dimensions[n] as i64);
 
             write!(block_path, "{}-{}", begin_offset, end_offset).unwrap();
