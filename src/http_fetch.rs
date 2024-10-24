@@ -81,12 +81,12 @@ impl NgPreHTTPFetch {
     }
 
     async fn fetch_json(&self, path_name: &str) -> JsValue {
-        self.fetch(path_name).await.and_then(|resp_value| {
-            assert!(resp_value.is_instance_of::<Response>());
-            let resp: Response = resp_value.dyn_into()?;
+        let resp_value = self.fetch(path_name).await.unwrap();
+        assert!(resp_value.is_instance_of::<Response>());
+        let resp: Response = resp_value.dyn_into().unwrap();
+        let json_val = JsFuture::from(resp.json().unwrap()).await.unwrap();
 
-            resp.json()
-        }).unwrap().into()
+        json_val
     }
 
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
@@ -278,17 +278,11 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
             ngpre::DatasetAttributes {
         utils::set_panic_hook();
 
-        console::log_1(&"get_dataset_attributes".into());
         let path = self.get_dataset_attributes_path(path_name);
-        let to_return = self
-            .fetch_json(&path)
-            .map(|json| {
-                let val: ngpre::DatasetAttributes = serde_wasm_bindgen::from_value(json).unwrap();
-                log!("val: {:?}", val);
-                val
-            });
+        let js_val = self.fetch_json(&path).await;
+        let val: ngpre::DatasetAttributes = serde_wasm_bindgen::from_value(js_val).unwrap();
 
-        to_return.await
+        val
     }
 
     async fn exists(&self, path_name: &str) -> bool {
