@@ -20,3 +20,9 @@ echo "self.ngpre_wasm = wasm_bindgen;" >> pkg/ngpre_wasm.js
 ```
 
 The built npm package will be in `pkg/`.
+
+Buld and update CATMAID:
+
+wasm-pack build --target no-modules --debug && echo "self.ngpre_wasm = wasm_bindgen;" >> pkg/ngpre_wasm.js && cp pkg/ngpre_wasm_bg.wasm <catmaid-dir>/django/applications/catmaid/static/libs/ngpre-wasm && cp pkg/ngpre_wasm.js <catmaid-dir>/django/applications/catmaid/static/libs/ngpre-wasm
+
+chromium --disable-web-security --user-data-dir=/tmp/google-chrome-user
