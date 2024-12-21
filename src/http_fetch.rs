@@ -235,12 +235,9 @@ impl DataLoader for HTTPDataLoader {
 }
 
 impl NgPreAsyncReader for NgPreHTTPFetch {
-    async fn get_version(&self) -> ngpre::Version {
-        let to_return = self.get_attributes("").map(|_attr| {
-                ngpre::Version::from_str(&"2.3.0").unwrap()
-            }).await;
-
-        to_return
+    fn get_version(&self) -> ngpre::Version {
+        self.get_attributes("");
+        ngpre::Version::from_str(&"2.3.0").unwrap()
     }
 
     async fn get_dataset_attributes(&self, path_name: &str) ->
