@@ -179,7 +179,7 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
 
 impl DataLoader for HTTPDataLoader {
     fn get(&self, path: String, progress: Option<bool>, tuples: Vec<(String, u64, u64)>, num: usize)
-        -> HashMap<String, Result<DataLoaderResult, Error>> {
+        -> HashMap<String, io::Result<DataLoaderResult>> {
 
         let result = HashMap::new();
         console::log_1(&format!("HTTPDataLoader {:?} num: {:?}", &path, num).into());
