@@ -1,6 +1,5 @@
-use futures::{self, future, FutureExt};
+use futures::{self, FutureExt};
 use js_sys;
-use ngpre;
 use serde_json;
 use wasm_bindgen;
 use wasm_bindgen_futures;
@@ -8,11 +7,8 @@ use web_sys;
 
 mod utils;
 
-use std::io::Error;
-
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::future_to_promise;
 
 use ngpre::prelude::*;
 use ngpre::{data_type_match, data_type_rstype_replace};
