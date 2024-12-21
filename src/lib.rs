@@ -79,19 +79,13 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         }
     }
 
-    async fn list_attributes(
+    fn list_attributes(
         &self,
         path_name: &str,
-    ) -> Promise {
-
+    ) -> JsValue {
         // TODO: Superfluous conversion from JSON to JsValue to serde to JsValue.
-        let list_attrs = self.list_attributes(path_name).await;
-        let to_return = async move {
-            let val = serde_wasm_bindgen::to_value(&list_attrs).unwrap();
-            Ok(JsValue::from(val))
-        };
-
-        future_to_promise(to_return)
+        let list_attrs = self.list_attributes(path_name);
+        serde_wasm_bindgen::to_value(&list_attrs).unwrap()
     }
 }
 
