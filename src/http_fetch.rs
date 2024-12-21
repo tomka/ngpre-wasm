@@ -35,11 +35,10 @@ impl GlobalProxy {
 fn self_() -> Result<GlobalProxy, JsValue> {
     let global = js_sys::global();
     if js_sys::eval("typeof WorkerGlobalScope !== 'undefined'")?.as_bool().unwrap() {
-        Ok(global.dyn_into::<web_sys::WorkerGlobalScope>().map(GlobalProxy::WorkerGlobalScope)?)
+        return Ok(global.dyn_into::<web_sys::WorkerGlobalScope>().map(GlobalProxy::WorkerGlobalScope)?)
     }
-    else {
-        Ok(global.dyn_into::<web_sys::Window>().map(GlobalProxy::Window)?)
-    }
+
+    Ok(global.dyn_into::<web_sys::Window>().map(GlobalProxy::Window)?)
 }
 
 
