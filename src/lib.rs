@@ -5,6 +5,7 @@ use wasm_bindgen;
 use wasm_bindgen_futures;
 use web_sys;
 
+pub mod http_fetch;
 mod utils;
 
 use js_sys::Promise;
@@ -12,9 +13,6 @@ use wasm_bindgen::prelude::*;
 
 use ngpre::prelude::*;
 use ngpre::{data_type_match, data_type_rstype_replace};
-
-
-pub mod http_fetch;
 
 #[allow(async_fn_in_trait)]
 pub trait NgPrePromiseReader {
