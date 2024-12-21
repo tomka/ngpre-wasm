@@ -66,14 +66,14 @@ impl NgPreHTTPFetch {
         let resp_value = self.fetch(path_name);
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
-        resp.json().unwrap().into()
+        resp.json().expect("failed parse JSON").into()
     }
 
     fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
         let js_val = self.fetch_json(&path);
-        serde_wasm_bindgen::from_value(js_val).unwrap()
+        serde_wasm_bindgen::from_value(js_val).expect("failed to convert javascript type into rust type")
     }
 
     fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
