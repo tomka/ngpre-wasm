@@ -171,16 +171,15 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
 /// with an NgPre core async trait.
 #[allow(async_fn_in_trait)]
 pub trait NgPreAsyncReader {
-    async fn get_version(&self) -> ngpre::Version;
+    fn get_version(&self) -> ngpre::Version;
 
-    async fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes;
+    fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes;
 
-    async fn exists(&self, path_name: &str) -> bool;
+    fn exists(&self, path_name: &str) -> bool;
 
     // TODO: FIX ME
-    async fn dataset_exists(&self, path_name: &str) -> bool {
-        self.get_dataset_attributes(path_name)
-            .map(|_| true).map(|x| x && x).await
+    fn dataset_exists(&self, path_name: &str) -> bool {
+        unimplemented!("what boolean value to return? {path_name}")
     }
 
     async fn read_block<T>(
