@@ -11,7 +11,7 @@ keywords = ["tensor"]
 categories = ["encoding", "filesystem", "science", "wasm"]
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [features]
 default = []
