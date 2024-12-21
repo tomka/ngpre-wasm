@@ -32,12 +32,6 @@ impl GlobalProxy {
     }
 }
 
-macro_rules! log {
-    ( $( $t:tt )* ) => {
-        web_sys::console::log_1(&format!( $( $t )* ).into());
-    }
-}
-
 fn self_() -> Result<GlobalProxy, JsValue> {
     let global = js_sys::global();
     if js_sys::eval("typeof WorkerGlobalScope !== 'undefined'")?.as_bool().unwrap() {
