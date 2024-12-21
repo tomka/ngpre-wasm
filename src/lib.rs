@@ -42,14 +42,10 @@ pub trait NgPrePromiseReader {
 }
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
-    async fn get_version(&self) -> Promise {
+    fn get_version(&self) -> JsValue {
         utils::set_panic_hook();
-        let version = self.get_version().await;
-        let to_return = async move {
-            Ok(JsValue::from(wrapped::Version(version)))
-        };
-
-        future_to_promise(to_return)
+        let ver = self.get_version();
+        JsValue::from(wrapped::Version(ver))
     }
 
     fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
