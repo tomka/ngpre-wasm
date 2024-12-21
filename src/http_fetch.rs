@@ -43,7 +43,6 @@ fn self_() -> Result<GlobalProxy, JsValue> {
 
 
 #[wasm_bindgen]
-#[derive(Clone)]
 pub struct NgPreHTTPFetch {
     base_path: String,
 }
