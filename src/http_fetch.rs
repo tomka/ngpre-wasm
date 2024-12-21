@@ -145,8 +145,8 @@ impl NgPreHTTPFetch {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position).await
     }
 
-    pub async fn list_attributes(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::list_attributes(self, path_name).await
+    pub fn list_attributes(&self, path_name: &str) -> JsValue {
+        NgPrePromiseReader::list_attributes(self, path_name)
     }
 
     pub async fn block_etag(
