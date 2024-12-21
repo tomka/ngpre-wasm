@@ -23,22 +23,22 @@ pub mod http_fetch;
 #[allow(async_fn_in_trait)]
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
-    async fn get_version(&self) -> Promise;
+    fn get_version(&self) -> JsValue;
 
-    async fn get_dataset_attributes(&self, path_name: &str) -> Promise;
+    fn get_dataset_attributes(&self, path_name: &str) -> JsValue;
 
-    async fn exists(&self, path_name: &str) -> Promise;
+    fn exists(&self, path_name: &str) -> bool;
 
-    async fn dataset_exists(&self, path_name: &str) -> Promise;
+    fn dataset_exists(&self, path_name: &str) -> bool;
 
     async fn read_block(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 
-    async fn list_attributes(&self, path_name: &str) -> Promise;
+    fn list_attributes(&self, path_name: &str) -> JsValue;
 }
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
