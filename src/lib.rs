@@ -62,16 +62,14 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
         // function scope.
-        let to_return = self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
-            Ok(JsValue::from(val.unwrap().into_data()))
-        }).await.clone();
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(future::ready(to_return))
+            self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
+                JsValue::from(val.unwrap().into_data())
+            }).await.clone()
         }
     }
 
@@ -93,14 +91,14 @@ pub trait NgPrePromiseEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 
     async fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 }
 
 impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
@@ -109,13 +107,9 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         let etag = self.block_etag(path_name, &data_attrs.0, grid_position.into()).await;
-        let to_return = async move {
-            Ok(JsValue::from(etag.unwrap_or_default()))
-        };
-
-        future_to_promise(to_return)
+        JsValue::from(etag.unwrap_or_default())
     }
 
     async fn read_block_with_etag(
@@ -123,16 +117,14 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
         // function scope.
-        let to_return = self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<(ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)>| {
-            Ok(JsValue::from(val.unwrap().0.into_data()))
-        }).await.clone();
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(future::ready(to_return))
+            self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).await.map(|val: (ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)| {
+                JsValue::from(val.0.into_data())
+            }).unwrap()
         }
     }
 }
