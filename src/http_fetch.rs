@@ -48,7 +48,7 @@ pub struct NgPreHTTPFetch {
 }
 
 impl NgPreHTTPFetch {
-    fn fetch(&self, path_name: &str) -> JsFuture {
+    fn fetch(&self, path_name: &str) -> Promise {
         let request_options = RequestInit::new();
         request_options.set_method("GET");
         request_options.set_mode(RequestMode::Cors);
@@ -57,9 +57,7 @@ impl NgPreHTTPFetch {
             &format!("{}/{}", &self.base_path, path_name),
             &request_options).unwrap();
 
-        let req_promise = self_().unwrap().fetch_with_request(&req);
-
-        JsFuture::from(req_promise)
+        self_().unwrap().fetch_with_request(&req)
     }
 
     async fn fetch_json(&self, path_name: &str) -> JsValue {
