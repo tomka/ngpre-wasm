@@ -170,9 +170,7 @@ impl NgPreHTTPFetch {
     }
 }
 
-struct HTTPDataLoader {
-
-}
+struct HTTPDataLoader {}
 
 fn path_join(paths: Vec<&str>) -> Option<String> {
     let mut path = PathBuf::new();
