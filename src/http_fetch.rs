@@ -1,8 +1,8 @@
+use futures::future::{self, Either};
+use futures::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
-use std::cmp;
-use futures::future::{self, FutureExt, Either};
-use futures::TryFutureExt;
+use std::{cmp, io};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -10,21 +10,11 @@ use std::path::PathBuf;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{
-    Request,
-    RequestInit,
-    RequestMode,
-    Response,
-    console,
-};
+use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 use super::*;
 
-use ngpre::{
-    DataLoader,
-    DataLoaderResult,
-};
-
+use ngpre::{DataLoader, DataLoaderResult};
 
 const ATTRIBUTES_FILE: &str = "info";
 
