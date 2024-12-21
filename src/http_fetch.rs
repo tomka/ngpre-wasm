@@ -300,12 +300,11 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         unimplemented!()
     }
 
-    async fn list_attributes(
+    fn list_attributes(
         &self,
         path_name: &str,
     ) -> serde_json::Value {
-
-        self.get_attributes(path_name).await
+        self.get_attributes(path_name)
     }
 }
 

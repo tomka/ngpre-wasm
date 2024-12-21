@@ -194,7 +194,7 @@ pub trait NgPreAsyncReader {
 
     async fn list(&self, path_name: &str) -> Vec<String>;
 
-    async fn list_attributes(&self, path_name: &str) -> serde_json::Value;
+    fn list_attributes(&self, path_name: &str) -> serde_json::Value;
 }
 
 
