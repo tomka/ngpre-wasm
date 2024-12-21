@@ -60,19 +60,17 @@ impl NgPreHTTPFetch {
         self_().unwrap().fetch_with_request(&req)
     }
 
-    async fn fetch_json(&self, path_name: &str) -> JsValue {
-        let resp_value = self.fetch(path_name).await.unwrap();
+    fn fetch_json(&self, path_name: &str) -> JsValue {
+        let resp_value = self.fetch(path_name);
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
-        let json_val = JsFuture::from(resp.json().unwrap()).await.unwrap();
-
-        json_val
+        resp.json().unwrap().into()
     }
 
-    async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
+    fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
-        let js_val = self.fetch_json(&path).await;
+        let js_val = self.fetch_json(&path);
         serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
