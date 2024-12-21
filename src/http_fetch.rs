@@ -49,6 +49,7 @@ pub struct NgPreHTTPFetch {
 
 impl NgPreHTTPFetch {
     fn fetch(&self, path_name: &str) -> Promise {
+        utils::set_panic_hook();
         let request_options = RequestInit::new();
         request_options.set_method("GET");
         request_options.set_mode(RequestMode::Cors);
@@ -61,6 +62,7 @@ impl NgPreHTTPFetch {
     }
 
     fn fetch_json(&self, path_name: &str) -> JsValue {
+        utils::set_panic_hook();
         let resp_value = self.fetch(path_name);
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
@@ -97,17 +99,19 @@ impl NgPreHTTPFetch {
 
     fn get_dataset_attributes_path(&self, path_name: &str) -> String {
         if path_name.is_empty() {
-            ATTRIBUTES_FILE.to_owned()
-        } else {
-            // There is only one top-level attribute file
-            format!("{}", ATTRIBUTES_FILE)
+            return ATTRIBUTES_FILE.to_owned()
         }
+
+        // There is only one top-level attribute file
+        ATTRIBUTES_FILE.to_string()
     }
 }
 
 #[wasm_bindgen]
 impl NgPreHTTPFetch {
     pub async fn open(base_path: &str) -> Result<JsValue, JsValue> {
+        utils::set_panic_hook();
+
         let reader = NgPreHTTPFetch {
             base_path: base_path.into(),
         };
