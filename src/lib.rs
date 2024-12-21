@@ -52,31 +52,17 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         future_to_promise(to_return)
     }
 
-    async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
-        let attrs = self.get_dataset_attributes(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(wrapped::DatasetAttributes(attrs)))
-        };
-
-        future_to_promise(to_return)
+    fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
+        let attrs = self.get_dataset_attributes(path_name);
+        JsValue::from(wrapped::DatasetAttributes(attrs))
     }
 
-    async fn exists(&self, path_name: &str) -> Promise {
-        let exists = self.exists(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(exists))
-        };
-
-        future_to_promise(to_return)
+    fn exists(&self, path_name: &str) -> bool {
+        self.exists(path_name)
     }
 
-    async fn dataset_exists(&self, path_name: &str) -> Promise {
-        let exists = self.dataset_exists(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(exists))
-        };
-
-        future_to_promise(to_return)
+    fn dataset_exists(&self, path_name: &str) -> bool {
+        self.dataset_exists(path_name)
     }
 
     async fn read_block(
