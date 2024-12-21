@@ -141,7 +141,7 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position).await
     }
 
@@ -154,7 +154,7 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         NgPrePromiseEtagReader::block_etag(
             self, path_name, data_attrs, grid_position).await
     }
@@ -164,9 +164,8 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
-        NgPrePromiseEtagReader::read_block_with_etag(
-            self, path_name, data_attrs, grid_position).await
+    ) -> JsValue {
+        NgPrePromiseEtagReader::read_block_with_etag(self, path_name, data_attrs, grid_position).await
     }
 }
 
