@@ -198,8 +198,9 @@ pub trait NgPreAsyncEtagReader {
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<(VecDataBlock<T>, Option<String>)>
-            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
-                T: ReflectedType;
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType;
 }
 
 pub mod wrapped {
