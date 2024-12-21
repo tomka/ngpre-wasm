@@ -120,23 +120,20 @@ impl NgPreHTTPFetch {
         return Ok(JsValue::from(reader))
     }
 
-/// Delegations to expose NgPrePromiseReader trait to WASM.
-#[wasm_bindgen]
-impl NgPreHTTPFetch {
-    pub async fn get_version(&self) -> Promise {
-        NgPrePromiseReader::get_version(self).await
+    pub fn get_version(&self) -> JsValue {
+        NgPrePromiseReader::get_version(self)
     }
 
-    pub async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::get_dataset_attributes(self, path_name).await
+    pub fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
+        NgPrePromiseReader::get_dataset_attributes(self, path_name)
     }
 
-    pub async fn exists(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::exists(self, path_name).await
+    pub fn exists(&self, path_name: &str) -> bool {
+        NgPrePromiseReader::exists(self, path_name)
     }
 
-    pub async fn dataset_exists(&self, path_name: &str) -> Promise {
-        NgPrePromiseReader::dataset_exists(self, path_name).await
+    pub fn dataset_exists(&self, path_name: &str) -> bool {
+        NgPrePromiseReader::dataset_exists(self, path_name)
     }
 
     pub async fn read_block(
