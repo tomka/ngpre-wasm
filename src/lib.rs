@@ -180,15 +180,16 @@ pub trait NgPreAsyncEtagReader {
 }
 
 pub mod wrapped {
+    use std::fmt;
+
     use super::*;
 
     #[wasm_bindgen]
     pub struct Version(pub(crate) ngpre::Version);
 
-    #[wasm_bindgen]
-    impl Version {
-        pub fn to_string(&self) -> String {
-            self.0.to_string()
+    impl fmt::Display for Version {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.0)
         }
     }
 
