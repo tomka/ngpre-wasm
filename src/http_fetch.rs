@@ -12,7 +12,6 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 use super::*;
-
 use ngpre::{DataLoader, DataLoaderResult};
 
 const ATTRIBUTES_FILE: &str = "info";
@@ -98,7 +97,7 @@ impl NgPreHTTPFetch {
 
     fn get_dataset_attributes_path(&self, path_name: &str) -> String {
         if path_name.is_empty() {
-            return ATTRIBUTES_FILE.to_owned()
+            return ATTRIBUTES_FILE.to_string()
         }
 
         // There is only one top-level attribute file
@@ -212,7 +211,6 @@ impl DataLoader for HTTPDataLoader {
             //let completed_req = futures::executor::block_on(f);
             //assert!(completed_req.is_instance_of::<Response>());
             //let resp: Response = completed_req.dyn_into().unwrap();
-
 
 
             //let json = JsFuture::from(resp.json()?).await?;
@@ -366,7 +364,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                     return None;
                 }
                 offset_grid_position.push(coord as u64);
-                n = n + 1;
+                n += 1;
             }
             console::log_2(&"offset_grid_position".into(), &format!("{:?}", &offset_grid_position).into());
 
@@ -474,7 +472,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 return None;
             }
             offset_grid_position.push(coord as u64);
-            n = n + 1;
+            n += 1;
         }
 
         console::log_1(&"read_block_with etag".into());
@@ -486,7 +484,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         if resp.ok() {
             let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-            let to_return = JsFuture::from(resp.array_buffer().unwrap())
+            return JsFuture::from(resp.array_buffer().unwrap())
                 .map_ok(move |arrbuff_value| {
                     assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
                     let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
@@ -497,10 +495,9 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                         &da2,
                         offset_grid_position).unwrap(),
                         etag))
-                });
-            return to_return.await.unwrap()
+                }).await.unwrap();
         }
 
-        None
+        return None
     }
 }
