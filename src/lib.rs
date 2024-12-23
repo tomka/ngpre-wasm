@@ -17,13 +17,13 @@ use ngpre::{data_type_match, data_type_rstype_replace};
 #[allow(async_fn_in_trait)]
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
-    fn get_version(&self) -> JsValue;
+    async fn get_version(&self) -> JsValue;
 
-    fn get_dataset_attributes(&self, path_name: &str) -> JsValue;
+    async fn get_dataset_attributes(&self, path_name: &str) -> JsValue;
 
-    fn exists(&self, path_name: &str) -> bool;
+    async fn exists(&self, path_name: &str) -> bool;
 
-    fn dataset_exists(&self, path_name: &str) -> bool;
+    async fn dataset_exists(&self, path_name: &str) -> bool;
 
     async fn read_block(
         &self,
@@ -32,27 +32,27 @@ pub trait NgPrePromiseReader {
         grid_position: Vec<i64>,
     ) -> JsValue;
 
-    fn list_attributes(&self, path_name: &str) -> JsValue;
+    async fn list_attributes(&self, path_name: &str) -> JsValue;
 }
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
-    fn get_version(&self) -> JsValue {
+    async fn get_version(&self) -> JsValue {
         utils::set_panic_hook();
-        let ver = self.get_version();
+        let ver = self.get_version().await;
         JsValue::from(wrapped::Version(ver))
     }
 
-    fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
-        let attrs = self.get_dataset_attributes(path_name);
+    async fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
+        let attrs = self.get_dataset_attributes(path_name).await;
         JsValue::from(wrapped::DatasetAttributes(attrs))
     }
 
-    fn exists(&self, path_name: &str) -> bool {
-        self.exists(path_name)
+    async fn exists(&self, path_name: &str) -> bool {
+        self.exists(path_name).await
     }
 
-    fn dataset_exists(&self, path_name: &str) -> bool {
-        self.dataset_exists(path_name)
+    async fn dataset_exists(&self, path_name: &str) -> bool {
+        self.dataset_exists(path_name).await
     }
 
     async fn read_block(
@@ -71,12 +71,12 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         }
     }
 
-    fn list_attributes(
+    async fn list_attributes(
         &self,
         path_name: &str,
     ) -> JsValue {
         // TODO: Superfluous conversion from JSON to JsValue to serde to JsValue.
-        let list_attrs = self.list_attributes(path_name);
+        let list_attrs = self.list_attributes(path_name).await;
         serde_wasm_bindgen::to_value(&list_attrs).unwrap()
     }
 }
@@ -133,14 +133,14 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
 /// with an NgPre core async trait.
 #[allow(async_fn_in_trait)]
 pub trait NgPreAsyncReader {
-    fn get_version(&self) -> ngpre::Version;
+    async fn get_version(&self) -> ngpre::Version;
 
-    fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes;
+    async fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes;
 
-    fn exists(&self, path_name: &str) -> bool;
+    async fn exists(&self, path_name: &str) -> bool;
 
     // TODO: FIX ME
-    fn dataset_exists(&self, path_name: &str) -> bool {
+    async fn dataset_exists(&self, path_name: &str) -> bool {
         unimplemented!("what boolean value to return? {path_name}")
     }
 
@@ -155,7 +155,7 @@ pub trait NgPreAsyncReader {
 
     async fn list(&self, path_name: &str) -> Vec<String>;
 
-    fn list_attributes(&self, path_name: &str) -> serde_json::Value;
+    async fn list_attributes(&self, path_name: &str) -> serde_json::Value;
 }
 
 

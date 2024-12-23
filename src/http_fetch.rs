@@ -1,5 +1,4 @@
-use futures::future::{self, Either};
-use futures::TryFutureExt;
+use futures::future::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
 use std::{cmp, io};
@@ -48,7 +47,7 @@ pub struct NgPreHTTPFetch {
 }
 
 impl NgPreHTTPFetch {
-    fn fetch(&self, path_name: &str) -> Promise {
+    fn fetch(&self, path_name: &str) -> JsFuture {
         utils::set_panic_hook();
         let request_options = RequestInit::new();
         request_options.set_method("GET");
@@ -58,21 +57,21 @@ impl NgPreHTTPFetch {
             &format!("{}/{}", &self.base_path, path_name),
             &request_options).unwrap();
 
-        self_().unwrap().fetch_with_request(&req)
+        JsFuture::from(self_().unwrap().fetch_with_request(&req))
     }
 
-    fn fetch_json(&self, path_name: &str) -> JsValue {
+    async fn fetch_json(&self, path_name: &str) -> JsValue {
         utils::set_panic_hook();
-        let resp_value = self.fetch(path_name);
+        let resp_value = self.fetch(path_name).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
-        let resp: Response = resp_value.dyn_into().unwrap();
+        let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
         resp.json().expect("failed parse JSON").into()
     }
 
-    fn get_attributes(&self, path_name: &str) -> serde_json::Value {
+    async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
-        let js_val = self.fetch_json(&path);
+        let js_val = self.fetch_json(&path).await;
         serde_wasm_bindgen::from_value(js_val).expect("failed to convert javascript type into rust type")
     }
 
@@ -116,7 +115,7 @@ impl NgPreHTTPFetch {
             base_path: base_path.into(),
         };
 
-        let version = NgPreAsyncReader::get_version(&reader);
+        let version = NgPreAsyncReader::get_version(&reader).await;
         if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
             return Err(JsValue::from("TODO: Incompatible version"));
         };
@@ -124,20 +123,20 @@ impl NgPreHTTPFetch {
         return Ok(JsValue::from(reader))
     }
 
-    pub fn get_version(&self) -> JsValue {
-        NgPrePromiseReader::get_version(self)
+    pub async fn get_version(&self) -> JsValue {
+        NgPrePromiseReader::get_version(self).await
     }
 
-    pub fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
-        NgPrePromiseReader::get_dataset_attributes(self, path_name)
+    pub async fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
+        NgPrePromiseReader::get_dataset_attributes(self, path_name).await
     }
 
-    pub fn exists(&self, path_name: &str) -> bool {
-        NgPrePromiseReader::exists(self, path_name)
+    pub async fn exists(&self, path_name: &str) -> bool {
+        NgPrePromiseReader::exists(self, path_name).await
     }
 
-    pub fn dataset_exists(&self, path_name: &str) -> bool {
-        NgPrePromiseReader::dataset_exists(self, path_name)
+    pub async fn dataset_exists(&self, path_name: &str) -> bool {
+        NgPrePromiseReader::dataset_exists(self, path_name).await
     }
 
     pub async fn read_block(
@@ -149,8 +148,8 @@ impl NgPreHTTPFetch {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position).await
     }
 
-    pub fn list_attributes(&self, path_name: &str) -> JsValue {
-        NgPrePromiseReader::list_attributes(self, path_name)
+    pub async fn list_attributes(&self, path_name: &str) -> JsValue {
+        NgPrePromiseReader::list_attributes(self, path_name).await
     }
 
     pub async fn block_etag(
@@ -239,21 +238,21 @@ impl DataLoader for HTTPDataLoader {
 }
 
 impl NgPreAsyncReader for NgPreHTTPFetch {
-    fn get_version(&self) -> ngpre::Version {
-        self.get_attributes("");
+    async fn get_version(&self) -> ngpre::Version {
+        self.get_attributes("").await;
         ngpre::Version::from_str(&"2.3.0").unwrap()
     }
 
-    fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes {
+    async fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes {
         utils::set_panic_hook();
 
         let path = self.get_dataset_attributes_path(path_name);
-        let js_val = self.fetch_json(&path);
+        let js_val = self.fetch_json(&path).await;
         serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
-    fn exists(&self, path_name: &str) -> bool {
-        let resp_value = self.fetch(path_name);
+    async fn exists(&self, path_name: &str) -> bool {
+        let resp_value = self.fetch(path_name).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
         resp.ok()
@@ -261,9 +260,9 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
 
     // Override the default NgPreAsyncReader impl to not require the GET on the
     // dataset directory path to be 200.
-    fn dataset_exists(&self, path_name: &str) -> bool {
+    async fn dataset_exists(&self, path_name: &str) -> bool {
         let path = self.get_dataset_attributes_path(path_name);
-        NgPreAsyncReader::exists(self, &path)
+        NgPreAsyncReader::exists(self, &path).await
     }
 
     async fn read_block<T>(
@@ -285,11 +284,11 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         unimplemented!()
     }
 
-    fn list_attributes(
+    async fn list_attributes(
         &self,
         path_name: &str,
     ) -> serde_json::Value {
-        self.get_attributes(path_name)
+        self.get_attributes(path_name).await
     }
 }
 
@@ -481,30 +480,27 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         console::log_1(&"read_block_with etag".into());
         console::log_1(&block_path.clone().into());
 
-        let res = JsFuture::from(self.fetch(&block_path));
+        let res = self.fetch(&block_path).await.unwrap();
+        assert!(res.is_instance_of::<Response>());
+        let resp: Response = res.dyn_into().unwrap();
 
-        res.and_then(|resp_value| {
-            assert!(resp_value.is_instance_of::<Response>());
-            let resp: Response = resp_value.dyn_into().unwrap();
+        if resp.ok() {
+            let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
+            let to_return = JsFuture::from(resp.array_buffer().unwrap())
+                .map_ok(move |arrbuff_value| {
+                    assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
+                    let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                    let buff = typebuff.to_vec();
 
-            if resp.ok() {
-                let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-                let to_return = JsFuture::from(resp.array_buffer().unwrap())
-                    .map_ok(move |arrbuff_value| {
-                        assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                        let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                        let buff = typebuff.to_vec();
+                    Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                        &buff,
+                        &da2,
+                        offset_grid_position).unwrap(),
+                        etag))
+                });
+            return to_return.await.unwrap()
+        }
 
-                        Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                            &buff,
-                            &da2,
-                            offset_grid_position).unwrap(),
-                            etag))
-                    });
-                Either::Left(to_return)
-            } else {
-                Either::Right(future::ok(None))
-            }
-        }).await.unwrap()
+        None
     }
 }
