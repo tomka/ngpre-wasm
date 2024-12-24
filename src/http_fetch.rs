@@ -1,8 +1,7 @@
+use futures::future::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
-use std::cmp;
-use futures::future::{self, FutureExt, Either};
-use futures::TryFutureExt;
+use std::{cmp, io};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -10,21 +9,10 @@ use std::path::PathBuf;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{
-    Request,
-    RequestInit,
-    RequestMode,
-    Response,
-    console,
-};
+use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 use super::*;
-
-use ngpre::{
-    DataLoader,
-    DataLoaderResult,
-};
-
+use ngpre::{DataLoader, DataLoaderResult};
 
 const ATTRIBUTES_FILE: &str = "info";
 
@@ -42,31 +30,24 @@ impl GlobalProxy {
     }
 }
 
-macro_rules! log {
-    ( $( $t:tt )* ) => {
-        web_sys::console::log_1(&format!( $( $t )* ).into());
-    }
-}
-
 fn self_() -> Result<GlobalProxy, JsValue> {
     let global = js_sys::global();
     if js_sys::eval("typeof WorkerGlobalScope !== 'undefined'")?.as_bool().unwrap() {
-        Ok(global.dyn_into::<web_sys::WorkerGlobalScope>().map(GlobalProxy::WorkerGlobalScope)?)
+        return Ok(global.dyn_into::<web_sys::WorkerGlobalScope>().map(GlobalProxy::WorkerGlobalScope)?)
     }
-    else {
-        Ok(global.dyn_into::<web_sys::Window>().map(GlobalProxy::Window)?)
-    }
+
+    Ok(global.dyn_into::<web_sys::Window>().map(GlobalProxy::Window)?)
 }
 
 
 #[wasm_bindgen]
-#[derive(Clone)]
 pub struct NgPreHTTPFetch {
     base_path: String,
 }
 
 impl NgPreHTTPFetch {
     fn fetch(&self, path_name: &str) -> JsFuture {
+        utils::set_panic_hook();
         let request_options = RequestInit::new();
         request_options.set_method("GET");
         request_options.set_mode(RequestMode::Cors);
@@ -75,25 +56,22 @@ impl NgPreHTTPFetch {
             &format!("{}/{}", &self.base_path, path_name),
             &request_options).unwrap();
 
-        let req_promise = self_().unwrap().fetch_with_request(&req);
-
-        JsFuture::from(req_promise)
+        JsFuture::from(self_().unwrap().fetch_with_request(&req))
     }
 
     async fn fetch_json(&self, path_name: &str) -> JsValue {
+        utils::set_panic_hook();
         let resp_value = self.fetch(path_name).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
-        let resp: Response = resp_value.dyn_into().unwrap();
-        let json_val = JsFuture::from(resp.json().unwrap()).await.unwrap();
-
-        json_val
+        let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
+        resp.json().expect("failed parse JSON").into()
     }
 
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
         let js_val = self.fetch_json(&path).await;
-        serde_wasm_bindgen::from_value(js_val).unwrap()
+        serde_wasm_bindgen::from_value(js_val).expect("failed to convert javascript type into rust type")
     }
 
     fn relative_block_path(&self, path_name: &str, grid_position: &[i64], block_size: &[u32], voxel_offset: &[i32], dimensions: &[u64]) -> String {
@@ -119,48 +97,44 @@ impl NgPreHTTPFetch {
 
     fn get_dataset_attributes_path(&self, path_name: &str) -> String {
         if path_name.is_empty() {
-            ATTRIBUTES_FILE.to_owned()
-        } else {
-            // There is only one top-level attribute file
-            format!("{}", ATTRIBUTES_FILE)
+            return ATTRIBUTES_FILE.to_string()
         }
+
+        // There is only one top-level attribute file
+        ATTRIBUTES_FILE.to_string()
     }
 }
 
 #[wasm_bindgen]
 impl NgPreHTTPFetch {
-    pub async fn open(base_path: &str) -> Promise {
+    pub async fn open(base_path: &str) -> Result<JsValue, JsValue> {
+        utils::set_panic_hook();
+
         let reader = NgPreHTTPFetch {
             base_path: base_path.into(),
         };
 
         let version = NgPreAsyncReader::get_version(&reader).await;
-        let to_return = if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
-            future::err(JsValue::from("TODO: Incompatible version"))
-        } else {
-            future::ok(JsValue::from(reader))
+        if !ngpre::is_version_compatible(&ngpre::VERSION, &version) {
+            return Err(JsValue::from("TODO: Incompatible version"));
         };
 
-        future_to_promise(to_return)
+        return Ok(JsValue::from(reader))
     }
-}
 
-/// Delegations to expose NgPrePromiseReader trait to WASM.
-#[wasm_bindgen]
-impl NgPreHTTPFetch {
-    pub async fn get_version(&self) -> Promise {
+    pub async fn get_version(&self) -> JsValue {
         NgPrePromiseReader::get_version(self).await
     }
 
-    pub async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
+    pub async fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
         NgPrePromiseReader::get_dataset_attributes(self, path_name).await
     }
 
-    pub async fn exists(&self, path_name: &str) -> Promise {
+    pub async fn exists(&self, path_name: &str) -> bool {
         NgPrePromiseReader::exists(self, path_name).await
     }
 
-    pub async fn dataset_exists(&self, path_name: &str) -> Promise {
+    pub async fn dataset_exists(&self, path_name: &str) -> bool {
         NgPrePromiseReader::dataset_exists(self, path_name).await
     }
 
@@ -169,11 +143,11 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         NgPrePromiseReader::read_block(self, path_name, data_attrs, grid_position).await
     }
 
-    pub async fn list_attributes(&self, path_name: &str) -> Promise {
+    pub async fn list_attributes(&self, path_name: &str) -> JsValue {
         NgPrePromiseReader::list_attributes(self, path_name).await
     }
 
@@ -182,7 +156,7 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         NgPrePromiseEtagReader::block_etag(
             self, path_name, data_attrs, grid_position).await
     }
@@ -192,15 +166,12 @@ impl NgPreHTTPFetch {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
-        NgPrePromiseEtagReader::read_block_with_etag(
-            self, path_name, data_attrs, grid_position).await
+    ) -> JsValue {
+        NgPrePromiseEtagReader::read_block_with_etag(self, path_name, data_attrs, grid_position).await
     }
 }
 
-struct HTTPDataLoader {
-
-}
+struct HTTPDataLoader {}
 
 fn path_join(paths: Vec<&str>) -> Option<String> {
     let mut path = PathBuf::new();
@@ -210,7 +181,7 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
 
 impl DataLoader for HTTPDataLoader {
     fn get(&self, path: String, progress: Option<bool>, tuples: Vec<(String, u64, u64)>, num: usize)
-        -> HashMap<String, Result<DataLoaderResult, Error>> {
+        -> HashMap<String, io::Result<DataLoaderResult>> {
 
         let result = HashMap::new();
         console::log_1(&format!("HTTPDataLoader {:?} num: {:?}", &path, num).into());
@@ -242,7 +213,6 @@ impl DataLoader for HTTPDataLoader {
             //let resp: Response = completed_req.dyn_into().unwrap();
 
 
-
             //let json = JsFuture::from(resp.json()?).await?;
             /*
                 .map(|resp_value| {
@@ -267,31 +237,23 @@ impl DataLoader for HTTPDataLoader {
 
 impl NgPreAsyncReader for NgPreHTTPFetch {
     async fn get_version(&self) -> ngpre::Version {
-        let to_return = self.get_attributes("").map(|_attr| {
-                ngpre::Version::from_str(&"2.3.0").unwrap()
-            }).await;
-
-        to_return
+        self.get_attributes("").await;
+        ngpre::Version::from_str(&"2.3.0").unwrap()
     }
 
-    async fn get_dataset_attributes(&self, path_name: &str) ->
-            ngpre::DatasetAttributes {
+    async fn get_dataset_attributes(&self, path_name: &str) -> ngpre::DatasetAttributes {
         utils::set_panic_hook();
 
         let path = self.get_dataset_attributes_path(path_name);
         let js_val = self.fetch_json(&path).await;
-        let val: ngpre::DatasetAttributes = serde_wasm_bindgen::from_value(js_val).unwrap();
-
-        val
+        serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
     async fn exists(&self, path_name: &str) -> bool {
-        self.fetch(path_name).map_ok(|resp_value| {
-            assert!(resp_value.is_instance_of::<Response>());
-            let resp: Response = resp_value.dyn_into().unwrap();
-
-            resp.ok()
-        }).await.unwrap()
+        let resp_value = self.fetch(path_name).await.unwrap();
+        assert!(resp_value.is_instance_of::<Response>());
+        let resp: Response = resp_value.dyn_into().unwrap();
+        resp.ok()
     }
 
     // Override the default NgPreAsyncReader impl to not require the GET on the
@@ -307,13 +269,12 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<VecDataBlock<T>>
-        where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
-            T: ReflectedType,
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType,
     {
-
-        NgPreAsyncEtagReader::read_block_with_etag(
-                self, path_name, data_attrs, grid_position)
-            .map(|maybe_block| maybe_block.map(|(block, _etag)| block)).await
+        NgPreAsyncEtagReader::read_block_with_etag(self, path_name, data_attrs, grid_position)
+            .await.map(|maybe_block| maybe_block.0)
     }
 
     async fn list(&self, _path_name: &str) -> Vec<String> {
@@ -325,7 +286,6 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         &self,
         path_name: &str,
     ) -> serde_json::Value {
-
         self.get_attributes(path_name).await
     }
 }
@@ -375,10 +335,10 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<(VecDataBlock<T>, Option<String>)>
-            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
-                T: ReflectedType,
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType,
     {
-
         console::log_1(&"read etag block".into());
         let da2 = data_attrs.clone();
 
@@ -396,6 +356,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let meta = ngpre::PrecomputedMetadata {
                 cloudpath: self.base_path.to_string(),
             };
+
             let mut offset_grid_position = GridCoord::new();
             let mut n = 0;
             for coord in grid_position {
@@ -403,7 +364,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                     return None;
                 }
                 offset_grid_position.push(coord as u64);
-                n = n + 1;
+                n += 1;
             }
             console::log_2(&"offset_grid_position".into(), &format!("{:?}", &offset_grid_position).into());
 
@@ -492,49 +453,51 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
 
-            future::ok::<Option<(SliceDataBlock<T, Vec<T>>, Option<String>)>, Option<String>>(None).await.unwrap()
-        } else {
-            let block_path = self.relative_block_path(path_name, &grid_position,
-                    chunk_size, voxel_offset, dimensions);
-
-            // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
-            // allow catching overflows when data from JavaScript is passed in.
-            let mut offset_grid_position = GridCoord::new();
-            let mut n = 0;
-            for coord in grid_position {
-                if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                    return None;
-                }
-                offset_grid_position.push(coord as u64);
-                n = n + 1;
-            }
-
-            console::log_1(&"read_block_with etag".into());
-            console::log_1(&block_path.clone().into());
-
-            self.fetch(&block_path).and_then(|resp_value| {
-                assert!(resp_value.is_instance_of::<Response>());
-                let resp: Response = resp_value.dyn_into().unwrap();
-
-                if resp.ok() {
-                    let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-                    let to_return = JsFuture::from(resp.array_buffer().unwrap())
-                        .map_ok(move |arrbuff_value| {
-                            assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                            let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                            let buff = typebuff.to_vec();
-
-                            Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                                &buff,
-                                &da2,
-                                offset_grid_position).unwrap(),
-                                etag))
-                        });
-                    Either::Left(to_return)
-                } else {
-                    Either::Right(future::ok(None))
-                }
-            }).await.unwrap()
+            // TODO: Confirm the behavior
+            return None
         }
+
+        console::log_1(&"--------------------".into());
+        console::log_1(&format!("non-sharded format detected at zoom level, zoom: {:?} path: {:?}", &zoom_level, &self.base_path).into());
+
+        let block_path = self.relative_block_path(path_name, &grid_position,
+            chunk_size, voxel_offset, dimensions);
+
+        // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
+        // allow catching overflows when data from JavaScript is passed in.
+        let mut offset_grid_position = GridCoord::new();
+        let mut n = 0;
+        for coord in grid_position {
+            if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
+                return None;
+            }
+            offset_grid_position.push(coord as u64);
+            n += 1;
+        }
+
+        console::log_1(&"read_block_with etag".into());
+        console::log_1(&block_path.clone().into());
+
+        let res = self.fetch(&block_path).await.unwrap();
+        assert!(res.is_instance_of::<Response>());
+        let resp: Response = res.dyn_into().unwrap();
+
+        if resp.ok() {
+            let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
+            return JsFuture::from(resp.array_buffer().unwrap())
+                .map_ok(move |arrbuff_value| {
+                    assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
+                    let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                    let buff = typebuff.to_vec();
+
+                    Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                        &buff,
+                        &da2,
+                        offset_grid_position).unwrap(),
+                        etag))
+                }).await.unwrap();
+        }
+
+        return None
     }
 }

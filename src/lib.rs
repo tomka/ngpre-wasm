@@ -1,82 +1,58 @@
-use futures::{self, future, FutureExt};
+use futures::{self, FutureExt};
 use js_sys;
-use ngpre;
 use serde_json;
 use wasm_bindgen;
 use wasm_bindgen_futures;
 use web_sys;
 
+pub mod http_fetch;
 mod utils;
-
-use std::io::Error;
 
 use js_sys::Promise;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::future_to_promise;
 
 use ngpre::prelude::*;
 use ngpre::{data_type_match, data_type_rstype_replace};
 
-
-pub mod http_fetch;
-
 #[allow(async_fn_in_trait)]
 pub trait NgPrePromiseReader {
     /// Get the NgPre specification version of the container.
-    async fn get_version(&self) -> Promise;
+    async fn get_version(&self) -> JsValue;
 
-    async fn get_dataset_attributes(&self, path_name: &str) -> Promise;
+    async fn get_dataset_attributes(&self, path_name: &str) -> JsValue;
 
-    async fn exists(&self, path_name: &str) -> Promise;
+    async fn exists(&self, path_name: &str) -> bool;
 
-    async fn dataset_exists(&self, path_name: &str) -> Promise;
+    async fn dataset_exists(&self, path_name: &str) -> bool;
 
     async fn read_block(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 
-    async fn list_attributes(&self, path_name: &str) -> Promise;
+    async fn list_attributes(&self, path_name: &str) -> JsValue;
 }
 
 impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
-    async fn get_version(&self) -> Promise {
+    async fn get_version(&self) -> JsValue {
         utils::set_panic_hook();
-        let version = self.get_version().await;
-        let to_return = async move {
-            Ok(JsValue::from(wrapped::Version(version)))
-        };
-
-        future_to_promise(to_return)
+        let ver = self.get_version().await;
+        JsValue::from(wrapped::Version(ver))
     }
 
-    async fn get_dataset_attributes(&self, path_name: &str) -> Promise {
+    async fn get_dataset_attributes(&self, path_name: &str) -> JsValue {
         let attrs = self.get_dataset_attributes(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(wrapped::DatasetAttributes(attrs)))
-        };
-
-        future_to_promise(to_return)
+        JsValue::from(wrapped::DatasetAttributes(attrs))
     }
 
-    async fn exists(&self, path_name: &str) -> Promise {
-        let exists = self.exists(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(exists))
-        };
-
-        future_to_promise(to_return)
+    async fn exists(&self, path_name: &str) -> bool {
+        self.exists(path_name).await
     }
 
-    async fn dataset_exists(&self, path_name: &str) -> Promise {
-        let exists = self.dataset_exists(path_name).await;
-        let to_return = async move {
-            Ok(JsValue::from(exists))
-        };
-
-        future_to_promise(to_return)
+    async fn dataset_exists(&self, path_name: &str) -> bool {
+        self.dataset_exists(path_name).await
     }
 
     async fn read_block(
@@ -84,32 +60,24 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
         // function scope.
-        let to_return = self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
-            Ok(JsValue::from(val.unwrap().into_data()))
-        }).await.clone();
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(future::ready(to_return))
+            self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
+                JsValue::from(val.unwrap().into_data())
+            }).await.clone()
         }
     }
 
     async fn list_attributes(
         &self,
         path_name: &str,
-    ) -> Promise {
-
+    ) -> JsValue {
         // TODO: Superfluous conversion from JSON to JsValue to serde to JsValue.
         let list_attrs = self.list_attributes(path_name).await;
-        let to_return = async move {
-            let val = serde_wasm_bindgen::to_value(&list_attrs).unwrap();
-            Ok(JsValue::from(val))
-        };
-
-        future_to_promise(to_return)
+        serde_wasm_bindgen::to_value(&list_attrs).unwrap()
     }
 }
 
@@ -121,14 +89,14 @@ pub trait NgPrePromiseEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 
     async fn read_block_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise;
+    ) -> JsValue;
 }
 
 impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
@@ -137,13 +105,9 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         let etag = self.block_etag(path_name, &data_attrs.0, grid_position.into()).await;
-        let to_return = async move {
-            Ok(JsValue::from(etag.unwrap_or_default()))
-        };
-
-        future_to_promise(to_return)
+        JsValue::from(etag.unwrap_or_default())
     }
 
     async fn read_block_with_etag(
@@ -151,16 +115,14 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
-    ) -> Promise {
+    ) -> JsValue {
         // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
         // function scope.
-        let to_return = self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<(ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)>| {
-            Ok(JsValue::from(val.unwrap().0.into_data()))
-        }).await.clone();
-
         data_type_match! {
             data_attrs.0.get_data_type(),
-            future_to_promise(future::ready(to_return))
+            self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).await.map(|val: (ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)| {
+                JsValue::from(val.0.into_data())
+            }).unwrap()
         }
     }
 }
@@ -179,8 +141,7 @@ pub trait NgPreAsyncReader {
 
     // TODO: FIX ME
     async fn dataset_exists(&self, path_name: &str) -> bool {
-        self.get_dataset_attributes(path_name)
-            .map(|_| true).map(|x| x && x).await
+        unimplemented!("what boolean value to return? {path_name}")
     }
 
     async fn read_block<T>(
@@ -213,20 +174,22 @@ pub trait NgPreAsyncEtagReader {
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<(VecDataBlock<T>, Option<String>)>
-            where VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
-                T: ReflectedType;
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType;
 }
 
 pub mod wrapped {
+    use std::fmt;
+
     use super::*;
 
     #[wasm_bindgen]
     pub struct Version(pub(crate) ngpre::Version);
 
-    #[wasm_bindgen]
-    impl Version {
-        pub fn to_string(&self) -> String {
-            self.0.to_string()
+    impl fmt::Display for Version {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.0)
         }
     }
 
