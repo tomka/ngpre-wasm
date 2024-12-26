@@ -64,7 +64,8 @@ impl NgPreHTTPFetch {
         let resp_value = self.fetch(path_name).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
-        resp.json().expect("failed parse JSON").into()
+
+        JsFuture::from(resp.json().unwrap()).await.expect("failed parse JSON")
     }
 
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
