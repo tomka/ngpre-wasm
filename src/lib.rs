@@ -65,9 +65,9 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
         // function scope.
         data_type_match! {
             data_attrs.0.get_data_type(),
-            self.read_block(path_name, &data_attrs.0, grid_position.into()).map(|val: Option<SliceDataBlock<i64, Vec<i64>>>| {
-                JsValue::from(val.unwrap().into_data())
-            }).await.clone()
+            self.read_block::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|val| {
+                JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from(val))
+            }).unwrap()
         }
     }
 
@@ -120,8 +120,8 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         // function scope.
         data_type_match! {
             data_attrs.0.get_data_type(),
-            self.read_block_with_etag(path_name, &data_attrs.0, grid_position.into()).await.map(|val: (ngpre::SliceDataBlock<i64, Vec<i64>>, Option<String>)| {
-                JsValue::from(val.0.into_data())
+            self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|(val, _etag)| {
+                JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from(val))
             }).unwrap()
         }
     }
