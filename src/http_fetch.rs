@@ -446,7 +446,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
             console::log_1(&format!("{:?}", reader.to_string()).into());
             let io_chunkdata = reader.get_data(&morton_codes, Some(data_attrs.get_key(zoom_level)),
-                    Some(progress), Some(parallel), Some(!decompress));
+                    Some(progress), Some(parallel), Some(!decompress)).await;
             // io_chunkdata = reader.get_data(
             //      morton_codes, meta.key(mip),
             //      progress=progress,
