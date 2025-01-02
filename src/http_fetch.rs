@@ -12,7 +12,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 use super::*;
-use ngpre::{DataLoader, DataLoaderResult};
+use ngpre::{BBox, DataLoader, DataLoaderResult, gridpoints};
 
 const ATTRIBUTES_FILE: &str = "info";
 
@@ -359,12 +359,14 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             };
 
             let mut offset_grid_position = GridCoord::new();
+            let mut offset_grid_position_max = GridCoord::new();
             let mut n = 0;
             for coord in grid_position {
                 if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
                     return None;
                 }
                 offset_grid_position.push(coord as u64);
+                offset_grid_position_max.push(coord as u64 + 1);
                 n += 1;
             }
             console::log_2(&"offset_grid_position".into(), &format!("{:?}", &offset_grid_position).into());
@@ -373,6 +375,11 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //  meta.chunk_size(mip), offset=meta.voxel_offset(mip)
             //)
             //full_bbox = Bbox.clamp(full_bbox, meta.bounds(mip))
+            // We only read a single block here (for now)
+            // let full_box = voxel_offset -> chunk_size
+            let mut full_box = BBox::new();
+            full_box.push( offset_grid_position.clone() );
+            full_box.push( offset_grid_position_max.clone() );
 
             // bounds(mip) is dataset size in voxels
             // grid_size = np.ceil(meta.bounds(mip).size3() / chunk_size).astype(np.uint32)
@@ -387,6 +394,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             console::log_2(&"grid_size".into(), &format!("{:?}", &grid_size).into());
             //bounds = meta.bounds(mip)
             //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
+            //let gpts = gridpoints(full_bbox, bounds, chunk_size);
             let gpts = vec![offset_grid_position];
             let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
 
