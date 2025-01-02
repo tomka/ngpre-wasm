@@ -1,10 +1,13 @@
+use async_trait::async_trait;
+
 use futures::future::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
 use std::{cmp, io};
-
+use std::ops::Range;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use io::Error;
 
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
@@ -180,16 +183,17 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
     Some(path.to_str().unwrap().to_owned())
 }
 
+#[async_trait(?Send)]
 impl DataLoader for HTTPDataLoader {
-    fn get(&self, path: String, progress: Option<bool>, tuples: Vec<(String, u64, u64)>, num: usize)
+    async fn get(&self, base_path: String, progress: Option<bool>, tuples: Vec<(String, u64, u64)>, num: usize)
         -> HashMap<String, io::Result<DataLoaderResult>> {
 
-        let result = HashMap::new();
-        console::log_1(&format!("HTTPDataLoader {:?} num: {:?}", &path, num).into());
+        let mut result = HashMap::new();
+        console::log_1(&format!("HTTPDataLoader base path: {:?}, num: {:?}", &base_path, num).into());
 
         // FIXME: Optional parallelization
-        for request in tuples.iter() {
-            let full_path = path_join(vec![&path, &request.0]).unwrap();
+        for (path, byte_start, byte_end) in tuples.iter() {
+            let full_path = path_join(vec![&base_path, &path]).unwrap();
             console::log_1(&format!("Requesting {:?}", full_path).into());
 
             let request_options = RequestInit::new();
@@ -201,35 +205,32 @@ impl DataLoader for HTTPDataLoader {
                 &request_options).unwrap();
 
             let _ = req.headers().set("Range",
-                &format!("bytes={}-{}", request.1, request.2));
+                &format!("bytes={}-{}", byte_start, byte_end));
 
             console::log_1(&format!("Request: {:?}", req).into());
 
-            let req_promise = self_().unwrap().fetch_with_request(&req);
+            let res = JsFuture::from(self_().unwrap().fetch_with_request(&req)).await.unwrap();
+            assert!(res.is_instance_of::<Response>());
+            let resp: Response = res.dyn_into().unwrap();
 
-            let f = JsFuture::from(req_promise);
-
-            //let completed_req = futures::executor::block_on(f);
-            //assert!(completed_req.is_instance_of::<Response>());
-            //let resp: Response = completed_req.dyn_into().unwrap();
-
-
-            //let json = JsFuture::from(resp.json()?).await?;
-            /*
-                .map(|resp_value| {
-                    assert!(resp_value.is_instance_of::<Response>());
-                    let resp: Response = resp_value.dyn_into().unwrap();
-
-                    if resp.ok() {
-                        resp.headers().get("ETag").unwrap_or(None)
-                    } else {
-                        None
-                    }
-                })
-            */
-
-            //console::log_1(&format!("Received: {:?}", resp).into());
-            //Box::new(map_future_error_rust(f))
+            if resp.ok() {
+                console::log_1(&format!("Received: {:?}", resp).into());
+                JsFuture::from(resp.array_buffer().unwrap())
+                    .map_ok(|arrbuff_value| {
+                        let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                        let buff = typebuff.to_vec();
+                        result.insert(path.clone(), Ok(DataLoaderResult {
+                                path: path.clone(),
+                                byterange: Range { start: byte_start.clone(), end: byte_end.clone() },
+                                content: buff,
+                                compress: "".to_string(),
+                                raw: true
+                        }));
+                    }).await.unwrap();
+            } else {
+                console::log_1(&format!("Error receiving data").into());
+                result.insert(path.clone(), Err(io::Error::new(io::ErrorKind::InvalidInput, resp.status_text())));
+            }
         }
 
         result
