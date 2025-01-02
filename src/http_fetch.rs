@@ -205,7 +205,7 @@ impl DataLoader for HTTPDataLoader {
                 &request_options).unwrap();
 
             let _ = req.headers().set("Range",
-                &format!("bytes={}-{}", byte_start, byte_end));
+                &format!("bytes={}-{}", byte_start, byte_end - 1));
 
             console::log_1(&format!("Request: {:?}", req).into());
 
