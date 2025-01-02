@@ -444,7 +444,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             };
             let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
             let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
-            console::log_1(&format!("{:?}", reader.to_string()).into());
+            console::log_1(&format!("{:?}, Key: {:?}, progress: {:?}, parallel: {:?}, decompress: {:?}", reader.to_string(), data_attrs.get_key(zoom_level), progress, parallel, decompress).into());
             let io_chunkdata = reader.get_data(&morton_codes, Some(data_attrs.get_key(zoom_level)),
                     Some(progress), Some(parallel), Some(!decompress)).await;
             // io_chunkdata = reader.get_data(
