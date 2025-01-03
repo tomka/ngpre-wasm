@@ -67,7 +67,7 @@ impl<T> NgPrePromiseReader for T where T: NgPreAsyncReader {
             data_attrs.0.get_data_type(),
             self.read_block::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|val| {
                 JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from(val))
-            }).unwrap()
+            }).unwrap_or(JsValue::NULL)
         }
     }
 
@@ -122,7 +122,7 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
             data_attrs.0.get_data_type(),
             self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|(val, _etag)| {
                 JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from(val))
-            }).unwrap()
+            }).unwrap_or(JsValue::NULL)
         }
     }
 }
