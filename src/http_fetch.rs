@@ -15,7 +15,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{console, Request, RequestInit, RequestMode, Response};
 
 use super::*;
-use ngpre::{BBox, DataLoader, DataLoaderResult, gridpoints};
+use ngpre::{BBox, DataLoader, DataLoaderResult, gridpoints, decode};
 
 const ATTRIBUTES_FILE: &str = "info";
 
@@ -224,7 +224,8 @@ impl DataLoader for HTTPDataLoader {
                                 byterange: Range { start: byte_start.clone(), end: byte_end.clone() },
                                 content: buff,
                                 compress: "".to_string(),
-                                raw: true
+                                raw: true,
+                                etag: resp.headers().get("ETag").unwrap_or(None)
                         }));
                     }).await.unwrap();
             } else {
@@ -396,7 +397,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //bounds = meta.bounds(mip)
             //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
             //let gpts = gridpoints(full_bbox, bounds, chunk_size);
-            let gpts = vec![offset_grid_position];
+            let gpts = vec![offset_grid_position.clone()];
             let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
 
             console::log_2(&"gpts".into(), &format!("{:?}", &gpts).into());
@@ -444,27 +445,48 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 meta: &meta,
             };
             let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
+            console::log_1(&format!("Zoom level: {:?}, sharding spec: {:?}", zoom_level, spec).into());
             let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
             console::log_1(&format!("{:?}, Key: {:?}, progress: {:?}, parallel: {:?}, decompress: {:?}", reader.to_string(), data_attrs.get_key(zoom_level), progress, parallel, decompress).into());
-            let io_chunkdata = reader.get_data(&morton_codes, Some(data_attrs.get_key(zoom_level)),
-                    Some(progress), Some(parallel), Some(!decompress)).await;
-            // io_chunkdata = reader.get_data(
-            //      morton_codes, meta.key(mip),
-            //      progress=progress,
-            //      raw=(not decompress),
-            //  )
+            let data_key = data_attrs.get_key(zoom_level);
+            let io_chunkdata = reader.get_data(
+                &morton_codes,
+                Some(data_key),
+                Some(progress),
+                Some(parallel),
+                Some(!decompress)).await.unwrap();
 
+            assert!(morton_codes.len() == 1);
+            let req_morton_code = morton_codes[0];
+
+            let io_data = io_chunkdata.get(&req_morton_code).unwrap();
+            assert!(io_data.is_some());
+            let (buff, etag) = io_data.as_ref().unwrap();
 
             // Rust-based decoding
-            //code_map = {}
+            //let mut code_map: HashMap::<u64, BBox>= HashMap::new();
             //for gridpoint, morton_code in zip(gpts, morton_codes):
             //  cutout_bbox = Bbox(
             //  bounds.minpt + gridpoint * chunk_size,
             //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
-            //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
+            //
+            //  code_map[morton_code] = cutout_bbox
+            //
+            //  img = decode(filedata, encoding, shape, dtype, block_size, background_color)
+            //  return img[tuple(xyz)][:, np.newaxis, np.newaxis, np.newaxis]
 
-            // TODO: Confirm the behavior
-            return None
+            // Decode single voxel for now
+            //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
+            let img_data = decode(&buff);
+
+            console::log_1(&format!("etag: {:?}, buff: {:?}", etag, buff).into());
+            console::log_1(&format!("decoded: {:?}", img_data).into());
+            return Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                &img_data,
+                &da2,
+                offset_grid_position,
+                zoom_level).unwrap(),
+                etag.clone()));
         }
 
         console::log_1(&"--------------------".into());
@@ -500,10 +522,12 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                     let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
                     let buff = typebuff.to_vec();
 
+                    console::log_1(&format!("etag: {:?}, buff: {:?}", etag, buff).into());
                     Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
                         &buff,
                         &da2,
-                        offset_grid_position).unwrap(),
+                        offset_grid_position,
+                        zoom_level).unwrap(),
                         etag))
                 }).await.unwrap();
         }

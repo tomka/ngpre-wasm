@@ -116,12 +116,10 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> JsValue {
-        // Have to clone the value returned by `read_block_with_etag` because `self` escapes the
-        // function scope.
         data_type_match! {
             data_attrs.0.get_data_type(),
-            self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|(val, _etag)| {
-                JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from(val))
+            self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|(val, etag)| {
+                JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from((val, etag)))
             }).unwrap_or(JsValue::NULL)
         }
     }
