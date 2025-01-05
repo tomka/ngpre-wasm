@@ -12,7 +12,7 @@ use io::Error;
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{console, Request, RequestInit, RequestMode, Response};
+use web_sys::{Request, RequestInit, RequestMode, Response};
 
 use super::*;
 use ngpre::{BBox, DataLoader, DataLoaderResult, gridpoints, decode};
@@ -189,12 +189,10 @@ impl DataLoader for HTTPDataLoader {
         -> HashMap<String, io::Result<DataLoaderResult>> {
 
         let mut result = HashMap::new();
-        console::log_1(&format!("HTTPDataLoader base path: {:?}, num: {:?}", &base_path, num).into());
 
         // FIXME: Optional parallelization
         for (path, byte_start, byte_end) in tuples.iter() {
             let full_path = path_join(vec![&base_path, &path]).unwrap();
-            console::log_1(&format!("Requesting {:?}", full_path).into());
 
             let request_options = RequestInit::new();
             request_options.set_method("GET");
@@ -207,14 +205,11 @@ impl DataLoader for HTTPDataLoader {
             let _ = req.headers().set("Range",
                 &format!("bytes={}-{}", byte_start, byte_end - 1));
 
-            console::log_1(&format!("Request: {:?}", req).into());
-
             let res = JsFuture::from(self_().unwrap().fetch_with_request(&req)).await.unwrap();
             assert!(res.is_instance_of::<Response>());
             let resp: Response = res.dyn_into().unwrap();
 
             if resp.ok() {
-                console::log_1(&format!("Received: {:?}", resp).into());
                 JsFuture::from(resp.array_buffer().unwrap())
                     .map_ok(|arrbuff_value| {
                         let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
@@ -229,7 +224,6 @@ impl DataLoader for HTTPDataLoader {
                         }));
                     }).await.unwrap();
             } else {
-                console::log_1(&format!("Error receiving data").into());
                 result.insert(path.clone(), Err(io::Error::new(io::ErrorKind::InvalidInput, resp.status_text())));
             }
         }
@@ -314,9 +308,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         let req = Request::new_with_str_and_init(
             &format!("{}/{}", &self.base_path, block_path),
             &request_options).unwrap();
-
-        console::log_1(&"block_etag".into());
-        console::log_1(&block_path.into());
         let req_promise = self_().unwrap().fetch_with_request(&req);
 
         JsFuture::from(req_promise)
@@ -342,7 +333,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
         T: ReflectedType,
     {
-        console::log_1(&"read etag block".into());
         let da2 = data_attrs.clone();
 
         // TODO: Could be nicer
@@ -353,9 +343,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         // Handling sharding is handled here, because
         if data_attrs.is_sharded(zoom_level) {
-            console::log_1(&"--------------------".into());
-            console::log_1(&format!("sharding format detected at zoom level, zoom: {:?} path: {:?}", &zoom_level, &self.base_path).into());
-
             let meta = ngpre::PrecomputedMetadata {
                 cloudpath: self.base_path.to_string(),
             };
@@ -371,7 +358,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 offset_grid_position_max.push(coord as u64 + 1);
                 n += 1;
             }
-            console::log_2(&"offset_grid_position".into(), &format!("{:?}", &offset_grid_position).into());
 
             //full_bbox = requested_bbox.expand_to_chunk_size(
             //  meta.chunk_size(mip), offset=meta.voxel_offset(mip)
@@ -389,19 +375,11 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let grid_size: Vec<u64> = bounds[0].iter().zip(bounds[1].iter()).enumerate()
                 .map(|(i, (bmin, bmax))| ((bmax - bmin) as u64).div_ceil(chunk_size[i].into()))
                 .collect();
-            console::log_2(&"voxel_offset".into(), &format!("{:?}", &voxel_offset).into());
-            console::log_2(&"chunk size".into(), &format!("{:?}", &chunk_size).into());
-            console::log_2(&"dimensions".into(), &format!("{:?}", &dimensions).into());
-            console::log_2(&"bounds".into(), &format!("{:?}", &bounds).into());
-            console::log_2(&"grid_size".into(), &format!("{:?}", &grid_size).into());
             //bounds = meta.bounds(mip)
             //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
             //let gpts = gridpoints(full_bbox, bounds, chunk_size);
             let gpts = vec![offset_grid_position.clone()];
             let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
-
-            console::log_2(&"gpts".into(), &format!("{:?}", &gpts).into());
-            console::log_2(&"morton_codes".into(), &format!("{:?}", &morton_codes).into());
 
             // Get raw data and send back
             let progress = false;
@@ -445,9 +423,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 meta: &meta,
             };
             let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
-            console::log_1(&format!("Zoom level: {:?}, sharding spec: {:?}", zoom_level, spec).into());
             let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
-            console::log_1(&format!("{:?}, Key: {:?}, progress: {:?}, parallel: {:?}, decompress: {:?}", reader.to_string(), data_attrs.get_key(zoom_level), progress, parallel, decompress).into());
             let data_key = data_attrs.get_key(zoom_level);
             let io_chunkdata = reader.get_data(
                 &morton_codes,
@@ -479,8 +455,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
             let img_data = decode(&buff);
 
-            console::log_1(&format!("etag: {:?}, buff: {:?}", etag, buff).into());
-            console::log_1(&format!("decoded: {:?}", img_data).into());
             return Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
                 &img_data,
                 &da2,
@@ -489,8 +463,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 etag.clone()));
         }
 
-        console::log_1(&"--------------------".into());
-        console::log_1(&format!("non-sharded format detected at zoom level, zoom: {:?} path: {:?}", &zoom_level, &self.base_path).into());
 
         let block_path = self.relative_block_path(path_name, &grid_position,
             chunk_size, voxel_offset, dimensions);
@@ -507,9 +479,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             n += 1;
         }
 
-        console::log_1(&"read_block_with etag".into());
-        console::log_1(&block_path.clone().into());
-
         let res = self.fetch(&block_path).await.unwrap();
         assert!(res.is_instance_of::<Response>());
         let resp: Response = res.dyn_into().unwrap();
@@ -522,7 +491,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                     let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
                     let buff = typebuff.to_vec();
 
-                    console::log_1(&format!("etag: {:?}, buff: {:?}", etag, buff).into());
                     Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
                         &buff,
                         &da2,
