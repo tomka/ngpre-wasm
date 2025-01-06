@@ -386,35 +386,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
             let parallel = 0;
 
             // The cache service ultimately retrieves the data. We need to provide it with a
-            // function to download the data from the respective path/URL.
-            /*
-            fn download_as (shard_path) {
-                let f = self.fetch(&shard_path).and_then(|resp_value| {
-                    assert!(resp_value.is_instance_of::<Response>());
-                    let resp: Response = resp_value.dyn_into().unwrap();
-
-                    if resp.ok() {
-                        let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-                        let to_return = JsFuture::from(resp.array_buffer().unwrap())
-                            .map(move |arrbuff_value| {
-                                assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                                let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                                let buff = typebuff.to_vec();
-
-                                Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                                    &buff,
-                                    &Da2,
-                                    offset_grid_position).unwrap(),
-                                    etag))
-                            });
-                        future::Either::A(to_return)
-                    } else  {
-                        future::Either::B(future::ok(None))
-                    }
-                };
-            }
-            */
-
+            // data loader to download the data from the respective path/URL.
             let loader = HTTPDataLoader {};
             let cache = ngpre::CacheService {
                 enabled: false,
@@ -461,7 +433,6 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                 zoom_level).unwrap(),
                 etag.clone()));
         }
-
 
         let block_path = self.relative_block_path(path_name, &grid_position,
             chunk_size, voxel_offset, dimensions);
