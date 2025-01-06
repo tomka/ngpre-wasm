@@ -1,4 +1,4 @@
-use futures::{self, FutureExt};
+use futures::{self};
 use js_sys;
 use serde_json;
 use wasm_bindgen;

@@ -7,7 +7,6 @@ use std::{cmp, io};
 use std::ops::Range;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use io::Error;
 
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
@@ -15,7 +14,7 @@ use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
 use super::*;
-use ngpre::{BBox, DataLoader, DataLoaderResult, gridpoints, decode};
+use ngpre::{BBox, DataLoader, DataLoaderResult, decode};
 
 const ATTRIBUTES_FILE: &str = "info";
 
@@ -185,7 +184,7 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
 
 #[async_trait(?Send)]
 impl DataLoader for HTTPDataLoader {
-    async fn get(&self, base_path: String, progress: Option<bool>, tuples: Vec<(String, u64, u64)>, num: usize)
+    async fn get(&self, base_path: String, _progress: Option<bool>, tuples: Vec<(String, u64, u64)>, _num: usize)
         -> HashMap<String, io::Result<DataLoaderResult>> {
 
         let mut result = HashMap::new();
