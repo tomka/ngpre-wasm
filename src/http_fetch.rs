@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use futures::FutureExt;
 use futures::future::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
@@ -7,11 +8,14 @@ use std::{cmp, io};
 use std::ops::Range;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use futures::future::join_all;
 
 use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
-use web_sys::{Request, RequestInit, RequestMode, Response};
+use web_sys::{console, Performance, Request, RequestInit, RequestMode, Response};
+use humantime;
 
 use super::*;
 use ngpre::{BBox, DataLoader, DataLoaderResult, decode};
@@ -30,6 +34,13 @@ impl GlobalProxy {
             GlobalProxy::WorkerGlobalScope(scope) => scope.fetch_with_request(request),
         }
     }
+
+    fn performance(&self) -> Performance {
+        match self {
+            GlobalProxy::Window(window) => window.performance().unwrap(),
+            GlobalProxy::WorkerGlobalScope(scope) => scope.performance().unwrap(),
+        }
+    }
 }
 
 fn self_() -> Result<GlobalProxy, JsValue> {
@@ -41,6 +52,11 @@ fn self_() -> Result<GlobalProxy, JsValue> {
     Ok(global.dyn_into::<web_sys::Window>().map(GlobalProxy::Window)?)
 }
 
+fn perf_to_system(amt: f64) -> SystemTime {
+    let secs = (amt as u64) / 1_000;
+    let nanos = (((amt as u64) % 1_000) as u32) * 1_000_000;
+    UNIX_EPOCH + Duration::new(secs, nanos)
+}
 
 #[wasm_bindgen]
 pub struct NgPreHTTPFetch {
@@ -105,6 +121,157 @@ impl NgPreHTTPFetch {
 
         // There is only one top-level attribute file
         ATTRIBUTES_FILE.to_string()
+    }
+
+    async fn get_block_data<T>(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_min_position: UnboundedGridCoord,
+        grid_max_position: UnboundedGridCoord,
+    ) -> Vec<Option<(VecDataBlock<T>, Option<String>)>>
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType,
+    {
+        let da2 = data_attrs.clone();
+
+        // TODO: Could be nicer
+        let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
+        let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
+        let chunk_size = data_attrs.get_block_size(zoom_level);
+        let dimensions = data_attrs.get_dimensions(zoom_level);
+
+        // Naive way of collecting all request grid coordinates
+        let mut request_grid_coords = Vec::new();
+        for x_coord in grid_min_position[0]..(grid_max_position[0] + 1) {
+            for y_coord in grid_min_position[1]..(grid_max_position[1] + 1) {
+                for z_coord in grid_min_position[2]..(grid_max_position[2] + 1) {
+                    request_grid_coords.push(GridCoord::from_vec(vec![
+                        x_coord as u64,
+                        y_coord as u64,
+                        z_coord as u64,
+                    ]));
+                }
+            }
+        }
+        //console::log_1(&format!("request_grid_coords: {:?}", &request_grid_coords).into());
+
+        // Handling sharding is handled here, because
+        if data_attrs.is_sharded(zoom_level) {
+            let meta = ngpre::PrecomputedMetadata {
+                cloudpath: self.base_path.to_string(),
+            };
+
+            //full_bbox = requested_bbox.expand_to_chunk_size(
+            //  meta.chunk_size(mip), offset=meta.voxel_offset(mip)
+            //)
+            //full_bbox = Bbox.clamp(full_bbox, meta.bounds(mip))
+            // We only read a single block here (for now)
+            // let full_box = voxel_offset -> chunk_size
+
+            // bounds(mip) is dataset size in voxels
+            // grid_size = np.ceil(meta.bounds(mip).size3() / chunk_size).astype(np.uint32)
+            let bounds = data_attrs.bounds(zoom_level);
+            let grid_size: Vec<u64> = bounds[0].iter().zip(bounds[1].iter()).enumerate()
+                .map(|(i, (bmin, bmax))| ((bmax - bmin) as u64).div_ceil(chunk_size[i].into()))
+                .collect();
+            //bounds = meta.bounds(mip)
+            //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
+            //let gpts = gridpoints(full_bbox, bounds, chunk_size);
+            //let gpts = vec![offset_grid_position.clone()];
+            let gpts = request_grid_coords;
+            let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
+            //console::log_1(&format!("gpts: {:?}", &gpts).into());
+            //console::log_1(&format!("morton_codes: {:?}", &morton_codes).into());
+
+            // Get raw data and send back
+            let progress = false;
+            let decompress = false;
+            let parallel = 0;
+
+            // The cache service ultimately retrieves the data. We need to provide it with a
+            // data loader to download the data from the respective path/URL.
+            let loader = HTTPDataLoader {};
+            let cache = ngpre::CacheService {
+                enabled: false,
+                data_loader: &loader,
+                meta: &meta,
+            };
+            let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
+            let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
+            //console::log_1(&format!("reader: {:?}", &reader).into());
+
+            let data_key = data_attrs.get_key(zoom_level);
+            let io_chunkdata = reader.get_data(
+                &morton_codes,
+                Some(data_key),
+                Some(progress),
+                Some(parallel),
+                Some(!decompress)).await.unwrap();
+
+            //console::log_1(&format!("io_chunkdata: {:?}", &io_chunkdata).into());
+
+            let block_data = io_chunkdata.iter().map(|(&morton_code, io_data)| {
+                assert!(io_data.is_some());
+                //console::log_1(&format!("io_data: {:?}", &io_data).into());
+                let (buff, etag) = io_data.as_ref().unwrap();
+                //console::log_1(&format!("etag: {:?}", &etag).into());
+                //console::log_1(&format!("buffer: {:?}", &buff).into());
+                let img_data = decode(&buff);
+                //console::log_1(&format!("img_data: {:?}", &img_data).into());
+
+                let offset_grid_position = gpts[morton_codes.iter().position(|&r| r == morton_code).unwrap()].clone();
+                //console::log_1(&format!("offset_grid_position: {:?}", &offset_grid_position).into());
+
+                return Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                    &img_data,
+                    &da2,
+                    offset_grid_position,
+                    zoom_level).unwrap(),
+                    etag.clone()));
+            }).collect();
+
+            return block_data;
+        }
+
+        let block_path = self.relative_block_path(path_name, &grid_min_position,
+            chunk_size, voxel_offset, dimensions);
+
+        // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
+        // allow catching overflows when data from JavaScript is passed in.
+        let mut offset_grid_position = GridCoord::new();
+        let mut n = 0;
+        for coord in grid_min_position {
+            if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
+                return vec![None];
+            }
+            offset_grid_position.push(coord as u64);
+            n += 1;
+        }
+
+        let res = self.fetch(&block_path).await.unwrap();
+        assert!(res.is_instance_of::<Response>());
+        let resp: Response = res.dyn_into().unwrap();
+
+        if resp.ok() {
+            let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
+            return JsFuture::from(resp.array_buffer().unwrap())
+                .map_ok(move |arrbuff_value| {
+                    assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
+                    let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                    let buff = typebuff.to_vec();
+
+                    vec![Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
+                        &buff,
+                        &da2,
+                        offset_grid_position,
+                        zoom_level).unwrap(),
+                        etag))]
+                }).await.unwrap();
+        }
+
+        return vec![None]
     }
 }
 
@@ -172,6 +339,16 @@ impl NgPreHTTPFetch {
     ) -> JsValue {
         NgPrePromiseEtagReader::read_block_with_etag(self, path_name, data_attrs, grid_position).await
     }
+
+    pub async fn populate_cache(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        grid_min_position: Vec<i64>,
+        grid_max_position: Vec<i64>,
+    ) -> Box<[JsValue]> {
+        NgPrePromiseEtagReader::populate_cache(self, path_name, data_attrs, grid_min_position, grid_max_position).await
+    }
 }
 
 struct HTTPDataLoader {}
@@ -184,12 +361,16 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
 
 #[async_trait(?Send)]
 impl DataLoader for HTTPDataLoader {
-    async fn get(&self, base_path: String, _progress: Option<bool>, tuples: Vec<(String, u64, u64)>, _num: usize)
-        -> HashMap<String, io::Result<DataLoaderResult>> {
+
+    async fn get(&self, base_path: String, _progress: Option<bool>, tuples: &Vec<(String, u64, u64)>, _num: usize)
+        -> HashMap<(String, u64, u64), io::Result<DataLoaderResult>> {
 
         let mut result = HashMap::new();
+        for (path, byte_start, byte_end) in tuples.iter() {
+            let full_path = path_join(vec![&base_path, &path]).unwrap();
+        }
 
-        // FIXME: Optional parallelization
+        let mut tasks = Vec::new();
         for (path, byte_start, byte_end) in tuples.iter() {
             let full_path = path_join(vec![&base_path, &path]).unwrap();
 
@@ -204,26 +385,48 @@ impl DataLoader for HTTPDataLoader {
             let _ = req.headers().set("Range",
                 &format!("bytes={}-{}", byte_start, byte_end - 1));
 
-            let res = JsFuture::from(self_().unwrap().fetch_with_request(&req)).await.unwrap();
+            tasks.push(JsFuture::from(self_().unwrap().fetch_with_request(&req)));
+        }
+
+        let task_results = join_all(tasks).await;
+        for (i, response) in task_results.into_iter().enumerate() {
+            let (path, byte_start, byte_end) = &tuples[i];
+
+            let res = response.unwrap();
             assert!(res.is_instance_of::<Response>());
             let resp: Response = res.dyn_into().unwrap();
 
+            let status = resp.status_text();
             if resp.ok() {
-                JsFuture::from(resp.array_buffer().unwrap())
-                    .map_ok(|arrbuff_value| {
+                let arrbuff = JsFuture::from(resp.array_buffer().unwrap()).await;
+                match arrbuff {
+                    Err(why) => {
+                        result.insert(
+                            (path.clone(), byte_start.clone(), byte_end.clone()),
+                            Err(io::Error::new(io::ErrorKind::InvalidInput, status))
+                        );
+                    },
+                    Ok(arrbuff_value) => {
                         let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
                         let buff = typebuff.to_vec();
-                        result.insert(path.clone(), Ok(DataLoaderResult {
+                        result.insert(
+                            (path.clone(), byte_start.clone(), byte_end.clone()),
+                            Ok(DataLoaderResult {
                                 path: path.clone(),
                                 byterange: Range { start: byte_start.clone(), end: byte_end.clone() },
                                 content: buff,
                                 compress: "".to_string(),
                                 raw: true,
                                 etag: resp.headers().get("ETag").unwrap_or(None)
-                        }));
-                    }).await.unwrap();
+                            })
+                        );
+                    }
+                };
             } else {
-                result.insert(path.clone(), Err(io::Error::new(io::ErrorKind::InvalidInput, resp.status_text())));
+                result.insert(
+                        (path.clone(), byte_start.clone(), byte_end.clone()),
+                        Err(io::Error::new(io::ErrorKind::InvalidInput, status))
+                    );
             }
         }
 
@@ -332,144 +535,43 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
         T: ReflectedType,
     {
-        let da2 = data_attrs.clone();
+        let performance = self_().unwrap().performance();
 
-        // TODO: Could be nicer
-        let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
-        let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
-        let chunk_size = data_attrs.get_block_size(zoom_level);
-        let dimensions = data_attrs.get_dimensions(zoom_level);
+        let grid_pos = grid_position.clone();
+        let start = perf_to_system(performance.now());
+        console::log_1(&format!("Start {:?}: {:?}", &grid_pos, humantime::format_rfc3339(start)).into());
 
-        // Handling sharding is handled here, because
-        if data_attrs.is_sharded(zoom_level) {
-            let meta = ngpre::PrecomputedMetadata {
-                cloudpath: self.base_path.to_string(),
-            };
+        let mut block_data = self.get_block_data(path_name, data_attrs, grid_position.clone(), grid_position.clone()).await;
+        let block = block_data.remove(0);
 
-            let mut offset_grid_position = GridCoord::new();
-            let mut offset_grid_position_max = GridCoord::new();
-            let mut n = 0;
-            for coord in grid_position {
-                if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                    return None;
-                }
-                offset_grid_position.push(coord as u64);
-                offset_grid_position_max.push(coord as u64 + 1);
-                n += 1;
-            }
+        let end = perf_to_system(performance.now());
+        console::log_1(&format!("End {:?}: {:?}", &grid_pos, humantime::format_rfc3339(end)).into());
 
-            //full_bbox = requested_bbox.expand_to_chunk_size(
-            //  meta.chunk_size(mip), offset=meta.voxel_offset(mip)
-            //)
-            //full_bbox = Bbox.clamp(full_bbox, meta.bounds(mip))
-            // We only read a single block here (for now)
-            // let full_box = voxel_offset -> chunk_size
-            let mut full_box = BBox::new();
-            full_box.push( offset_grid_position.clone() );
-            full_box.push( offset_grid_position_max.clone() );
+        return block;
+    }
 
-            // bounds(mip) is dataset size in voxels
-            // grid_size = np.ceil(meta.bounds(mip).size3() / chunk_size).astype(np.uint32)
-            let bounds = data_attrs.bounds(zoom_level);
-            let grid_size: Vec<u64> = bounds[0].iter().zip(bounds[1].iter()).enumerate()
-                .map(|(i, (bmin, bmax))| ((bmax - bmin) as u64).div_ceil(chunk_size[i].into()))
-                .collect();
-            //bounds = meta.bounds(mip)
-            //gpts = list(gridpoints(full_bbox, bounds, chunk_size))
-            //let gpts = gridpoints(full_bbox, bounds, chunk_size);
-            let gpts = vec![offset_grid_position.clone()];
-            let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
+    async fn populate_cache<T>(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_min_position: UnboundedGridCoord,
+        grid_max_position: UnboundedGridCoord,
+    ) -> Vec<Option<(VecDataBlock<T>, Option<String>)>>
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType,
+    {
+        let performance = self_().unwrap().performance();
+        let start = perf_to_system(performance.now());
+        console::log_1(&format!("Start: {:?}", humantime::format_rfc3339(start)).into());
+        console::log_1(&format!("populate_cache: begin using path {:?} and bounding box limits {:?} - {:?}", &path_name, &grid_min_position, &grid_max_position).into());
+        // Build request bounding box, create shard reader and cache service
 
-            // Get raw data and send back
-            let progress = false;
-            let decompress = false;
-            let parallel = 0;
+        let block_data = self.get_block_data(path_name, data_attrs, grid_min_position.clone(), grid_max_position.clone()).await;
 
-            // The cache service ultimately retrieves the data. We need to provide it with a
-            // data loader to download the data from the respective path/URL.
-            let loader = HTTPDataLoader {};
-            let cache = ngpre::CacheService {
-                enabled: false,
-                data_loader: &loader,
-                meta: &meta,
-            };
-            let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
-            let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
-            let data_key = data_attrs.get_key(zoom_level);
-            let io_chunkdata = reader.get_data(
-                &morton_codes,
-                Some(data_key),
-                Some(progress),
-                Some(parallel),
-                Some(!decompress)).await.unwrap();
+        let end = perf_to_system(performance.now());
+        console::log_1(&format!("End: {:?}", humantime::format_rfc3339(end)).into());
 
-            assert!(morton_codes.len() == 1);
-            let req_morton_code = morton_codes[0];
-
-            let io_data = io_chunkdata.get(&req_morton_code).unwrap();
-            assert!(io_data.is_some());
-            let (buff, etag) = io_data.as_ref().unwrap();
-
-            // Rust-based decoding
-            //let mut code_map: HashMap::<u64, BBox>= HashMap::new();
-            //for gridpoint, morton_code in zip(gpts, morton_codes):
-            //  cutout_bbox = Bbox(
-            //  bounds.minpt + gridpoint * chunk_size,
-            //  min2(bounds.minpt + (gridpoint + 1) * chunk_size, bounds.maxpt)
-            //
-            //  code_map[morton_code] = cutout_bbox
-            //
-            //  img = decode(filedata, encoding, shape, dtype, block_size, background_color)
-            //  return img[tuple(xyz)][:, np.newaxis, np.newaxis, np.newaxis]
-
-            // Decode single voxel for now
-            //decode_fn = partial(decode_single_voxel, requested_bbox.minpt - full_bbox.minpt)
-            let img_data = decode(&buff);
-
-            return Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                &img_data,
-                &da2,
-                offset_grid_position,
-                zoom_level).unwrap(),
-                etag.clone()));
-        }
-
-        let block_path = self.relative_block_path(path_name, &grid_position,
-            chunk_size, voxel_offset, dimensions);
-
-        // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
-        // allow catching overflows when data from JavaScript is passed in.
-        let mut offset_grid_position = GridCoord::new();
-        let mut n = 0;
-        for coord in grid_position {
-            if coord < 0 || coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                return None;
-            }
-            offset_grid_position.push(coord as u64);
-            n += 1;
-        }
-
-        let res = self.fetch(&block_path).await.unwrap();
-        assert!(res.is_instance_of::<Response>());
-        let resp: Response = res.dyn_into().unwrap();
-
-        if resp.ok() {
-            let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-            return JsFuture::from(resp.array_buffer().unwrap())
-                .map_ok(move |arrbuff_value| {
-                    assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                    let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                    let buff = typebuff.to_vec();
-
-                    Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                        &buff,
-                        &da2,
-                        offset_grid_position,
-                        zoom_level).unwrap(),
-                        etag))
-                }).await.unwrap();
-        }
-
-        return None
+        return block_data
     }
 }

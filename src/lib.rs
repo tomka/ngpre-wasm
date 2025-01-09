@@ -97,6 +97,14 @@ pub trait NgPrePromiseEtagReader {
         data_attrs: &wrapped::DatasetAttributes,
         grid_position: Vec<i64>,
     ) -> JsValue;
+
+    async fn populate_cache(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        grid_min_position: Vec<i64>,
+        grid_max_position: Vec<i64>,
+    ) -> Box<[JsValue]>;
 }
 
 impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
@@ -121,6 +129,24 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
             self.read_block_with_etag::<RsType>(path_name, &data_attrs.0, grid_position.into()).await.map(|(val, etag)| {
                 JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from((val, etag)))
             }).unwrap_or(JsValue::NULL)
+        }
+    }
+
+    async fn populate_cache(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        grid_min_position: Vec<i64>,
+        grid_max_position: Vec<i64>,
+    ) -> Box<[JsValue]> {
+        data_type_match! {
+            data_attrs.0.get_data_type(),
+            self.populate_cache::<RsType>(path_name, &data_attrs.0, grid_min_position.into(), grid_max_position.into()).await.iter().map(|result| {
+                // FIXME: Avoid clone()
+                result.clone().map(|(val, etag)| {
+                    JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from((val, etag)))
+                }).unwrap_or(JsValue::NULL)
+            }).collect::<Vec<_>>().into_boxed_slice()
         }
     }
 }
@@ -172,6 +198,17 @@ pub trait NgPreAsyncEtagReader {
         data_attrs: &DatasetAttributes,
         grid_position: UnboundedGridCoord,
     ) -> Option<(VecDataBlock<T>, Option<String>)>
+    where
+        VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
+        T: ReflectedType;
+
+    async fn populate_cache<T>(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_min_position: UnboundedGridCoord,
+        grid_max_position: UnboundedGridCoord,
+    ) -> Vec<Option<(VecDataBlock<T>, Option<String>)>>
     where
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
         T: ReflectedType;
