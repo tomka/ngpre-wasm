@@ -15,7 +15,6 @@ use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{console, Performance, Request, RequestInit, RequestMode, Response};
-use humantime;
 
 use super::*;
 use ngpre::{BBox, DataLoader, DataLoaderResult, decode};
@@ -539,13 +538,13 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
 
         let grid_pos = grid_position.clone();
         let start = perf_to_system(performance.now());
-        console::log_1(&format!("Start {:?}: {:?}", &grid_pos, humantime::format_rfc3339(start)).into());
 
         let mut block_data = self.get_block_data(path_name, data_attrs, grid_position.clone(), grid_position.clone()).await;
         let block = block_data.remove(0);
 
         let end = perf_to_system(performance.now());
-        console::log_1(&format!("End {:?}: {:?}", &grid_pos, humantime::format_rfc3339(end)).into());
+        console::log_1(&format!("read_block_with_etag {:?} duration: {:?}ms", &grid_pos,
+                end.duration_since(start).unwrap().as_millis()).into());
 
         return block;
     }
@@ -563,14 +562,12 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
     {
         let performance = self_().unwrap().performance();
         let start = perf_to_system(performance.now());
-        console::log_1(&format!("Start: {:?}", humantime::format_rfc3339(start)).into());
-        console::log_1(&format!("populate_cache: begin using path {:?} and bounding box limits {:?} - {:?}", &path_name, &grid_min_position, &grid_max_position).into());
-        // Build request bounding box, create shard reader and cache service
 
         let block_data = self.get_block_data(path_name, data_attrs, grid_min_position.clone(), grid_max_position.clone()).await;
 
         let end = perf_to_system(performance.now());
-        console::log_1(&format!("End: {:?}", humantime::format_rfc3339(end)).into());
+        console::log_1(&format!("read_blocks_with_etag of {:?} blocks, duration: {:?}ms", &grid_coords.len(),
+                end.duration_since(start).unwrap().as_millis()).into());
 
         return block_data
     }

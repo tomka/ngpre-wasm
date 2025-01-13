@@ -37,7 +37,6 @@ zune-core = "0.4.12"
 zune-image = "0.4.15"
 itertools = "0.13.0"
 async-trait = "0.1.83"
-humantime = "2.1.0"
 
 [dependencies.web-sys]
 version = "0.3.70"
