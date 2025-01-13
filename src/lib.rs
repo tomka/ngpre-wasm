@@ -98,12 +98,11 @@ pub trait NgPrePromiseEtagReader {
         grid_position: Vec<i64>,
     ) -> JsValue;
 
-    async fn populate_cache(
+    async fn read_blocks_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_min_position: Vec<i64>,
-        grid_max_position: Vec<i64>,
+        flattened_grid_coords: Vec<i64>,
     ) -> Box<[JsValue]>;
 }
 
@@ -132,16 +131,17 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         }
     }
 
-    async fn populate_cache(
+    async fn read_blocks_with_etag(
         &self,
         path_name: &str,
         data_attrs: &wrapped::DatasetAttributes,
-        grid_min_position: Vec<i64>,
-        grid_max_position: Vec<i64>,
+        flattened_grid_coords: Vec<i64>,
     ) -> Box<[JsValue]> {
         data_type_match! {
             data_attrs.0.get_data_type(),
-            self.populate_cache::<RsType>(path_name, &data_attrs.0, grid_min_position.into(), grid_max_position.into()).await.iter().map(|result| {
+            self.read_blocks_with_etag::<RsType>(path_name, &data_attrs.0,
+                    // FIXME: Avoid .clone()?
+                    flattened_grid_coords.chunks(3).map(|c| c.to_vec().into()).collect()).await.iter().map(|result| {
                 // FIXME: Avoid clone()
                 result.clone().map(|(val, etag)| {
                     JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from((val, etag)))
@@ -202,12 +202,11 @@ pub trait NgPreAsyncEtagReader {
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
         T: ReflectedType;
 
-    async fn populate_cache<T>(
+    async fn read_blocks_with_etag<T>(
         &self,
         path_name: &str,
         data_attrs: &DatasetAttributes,
-        grid_min_position: UnboundedGridCoord,
-        grid_max_position: UnboundedGridCoord,
+        grid_coords: Vec<UnboundedGridCoord>,
     ) -> Vec<Option<(VecDataBlock<T>, Option<String>)>>
     where
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
