@@ -180,8 +180,6 @@ impl NgPreHTTPFetch {
             Some(parallel),
             Some(!decompress)).await.unwrap();
 
-        console::log_1(&format!("optimized bundles: {:?}", optimized_bundles.len()).into());
-
         // Map labels (morton codes) back to grid coordinates
         let label_to_coord: HashMap<u64, UnboundedGridCoord> =
             morton_codes.iter().enumerate().map(|(i, label)| (*label, grid_coords.get(i).unwrap().clone())).collect();
