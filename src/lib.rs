@@ -306,6 +306,12 @@ pub mod wrapped {
             self.0.get_block_num_elements(zoom_level)
         }
 
+        /// Find out if this dataset is sharded. Currently this is assumed for
+        /// all scale level if scale zero is sharded.
+        pub fn is_sharded(&self, zoom_level: usize) -> bool {
+            self.0.is_sharded(zoom_level)
+        }
+
         pub fn to_json(&self) -> JsValue {
             serde_wasm_bindgen::to_value(&self).unwrap()
         }
