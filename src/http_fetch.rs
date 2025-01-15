@@ -122,6 +122,74 @@ impl NgPreHTTPFetch {
         ATTRIBUTES_FILE.to_string()
     }
 
+    async fn optimize_requests<T>(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_coords: Vec<UnboundedGridCoord>,
+    ) -> Vec<Vec<UnboundedGridCoord>>
+    where
+        T: ReflectedType,
+    {
+        let da2 = data_attrs.clone();
+
+        // FIXME: Input should be bounded already
+        let bounded_grid_coords = grid_coords.iter().map(|coords| GridCoord::from_vec(coords.iter().map(|x| *x as u64).collect())).collect();
+
+        // TODO: Could be nicer
+        let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
+        let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
+        let chunk_size = data_attrs.get_block_size(zoom_level);
+        let dimensions = data_attrs.get_dimensions(zoom_level);
+
+        // For non-sharded data, there currently is no real optimization to be done.
+        if !data_attrs.is_sharded(zoom_level) {
+            return vec![grid_coords];
+        }
+
+        let meta = ngpre::PrecomputedMetadata {
+            cloudpath: self.base_path.to_string(),
+        };
+
+        let bounds = data_attrs.bounds(zoom_level);
+        let grid_size: Vec<u64> = bounds[0].iter().zip(bounds[1].iter()).enumerate()
+            .map(|(i, (bmin, bmax))| ((bmax - bmin) as u64).div_ceil(chunk_size[i].into()))
+            .collect();
+        let gpts = bounded_grid_coords;
+        let morton_codes = ngpre::compressed_morton_code(&gpts, &grid_size).unwrap();
+
+        // Get raw data and send back
+        let progress = false;
+        let decompress = false;
+        let parallel = 0;
+
+        let loader = HTTPDataLoader {};
+        let cache = ngpre::CacheService {
+            enabled: false,
+            data_loader: &loader,
+            meta: &meta,
+        };
+        let spec = data_attrs.get_sharding_spec(zoom_level).unwrap();
+        let mut reader = ngpre::ShardReader::new(&meta, &cache, &spec, &loader, None, None);
+
+        let data_key = data_attrs.get_key(zoom_level);
+        let optimized_bundles = reader.get_bundled_grid_coords(
+            &morton_codes,
+            Some(data_key),
+            Some(progress),
+            Some(parallel),
+            Some(!decompress)).await.unwrap();
+
+        console::log_1(&format!("optimized bundles: {:?}", optimized_bundles.len()).into());
+
+        // Map labels (morton codes) back to grid coordinates
+        let label_to_coord: HashMap<u64, UnboundedGridCoord> =
+            morton_codes.iter().enumerate().map(|(i, label)| (*label, grid_coords.get(i).unwrap().clone())).collect();
+        return optimized_bundles.into_iter().map(|bundle| {
+            bundle.iter().map(|label| label_to_coord.get(label).unwrap().clone()).collect()
+        }).collect();
+    }
+
     async fn get_block_data<T>(
         &self,
         path_name: &str,
@@ -330,6 +398,15 @@ impl NgPreHTTPFetch {
         flattened_grid_coords: Vec<i64>,
     ) -> Box<[JsValue]> {
         NgPrePromiseEtagReader::read_blocks_with_etag(self, path_name, data_attrs, flattened_grid_coords).await
+    }
+
+    pub async fn get_optimized_request_bundles(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        flattened_grid_coords: Vec<i64>,
+    ) -> Box<[JsValue]> {
+        NgPrePromiseEtagReader::get_optimized_request_bundles(self, path_name, data_attrs, flattened_grid_coords).await
     }
 }
 
@@ -551,6 +628,25 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         console::log_1(&format!("read_blocks_with_etag of {:?} blocks, duration: {:?}ms", &grid_coords.len(),
                 end.duration_since(start).unwrap().as_millis()).into());
 
-        return block_data
+        return block_data;
+    }
+
+    async fn get_optimized_request_bundles(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_coords: Vec<UnboundedGridCoord>,
+    ) -> Vec<Vec<UnboundedGridCoord>>
+    {
+        let performance = self_().unwrap().performance();
+        let start = perf_to_system(performance.now());
+
+        let bundles = self.optimize_requests::<u8>(path_name, data_attrs, grid_coords.clone()).await;
+
+        let end = perf_to_system(performance.now());
+        console::log_1(&format!("get_optimized_request_bundles of {:?} blocks, duration: {:?}ms", &grid_coords.len(),
+                end.duration_since(start).unwrap().as_millis()).into());
+
+        bundles
     }
 }

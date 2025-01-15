@@ -1,4 +1,5 @@
 use futures::{self};
+use std::iter::once;
 use js_sys;
 use serde_json;
 use wasm_bindgen;
@@ -104,6 +105,13 @@ pub trait NgPrePromiseEtagReader {
         data_attrs: &wrapped::DatasetAttributes,
         flattened_grid_coords: Vec<i64>,
     ) -> Box<[JsValue]>;
+
+    async fn get_optimized_request_bundles(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        flattened_grid_coords: Vec<i64>,
+    ) -> Box<[JsValue]>;
 }
 
 impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
@@ -140,13 +148,37 @@ impl<T> NgPrePromiseEtagReader for T where T: NgPreAsyncEtagReader {
         data_type_match! {
             data_attrs.0.get_data_type(),
             self.read_blocks_with_etag::<RsType>(path_name, &data_attrs.0,
-                    // FIXME: Avoid .clone()?
-                    flattened_grid_coords.chunks(3).map(|c| c.to_vec().into()).collect()).await.iter().map(|result| {
-                // FIXME: Avoid clone()
-                result.clone().map(|(val, etag)| {
+                    flattened_grid_coords.chunks(3).map(|c| c.to_vec().into()).collect()).await.into_iter().map(|result| {
+                result.map(|(val, etag)| {
                     JsValue::from(<RsType as VecBlockMonomorphizerReflection>::MONOMORPH::from((val, etag)))
                 }).unwrap_or(JsValue::NULL)
             }).collect::<Vec<_>>().into_boxed_slice()
+        }
+    }
+
+    async fn get_optimized_request_bundles(
+        &self,
+        path_name: &str,
+        data_attrs: &wrapped::DatasetAttributes,
+        flattened_grid_coords: Vec<i64>,
+    ) -> Box<[JsValue]> {
+        data_type_match! {
+            data_attrs.0.get_data_type(),
+            {
+                let grid_coords = flattened_grid_coords.chunks(3).map(|c| c.to_vec().into()).collect();
+                let bundles = self.get_optimized_request_bundles(path_name, &data_attrs.0, grid_coords).await;
+
+                // Serialize bundles into 1D Vec where all bundles are flattened and prefixed with their
+                // length. E.g. [[[1,2,3]], [[2,3,4], [5,6,7]]] becomes [1, 1, 2, 3, 2, 2, 3, 4, 5, 6, 7].
+                // This is done to more easily transfer the result to JavaScript, because wasm-bindgen
+                // doesn't support nested Vec objects.
+                bundles.into_iter().flat_map(|b| {
+                    once(JsValue::from(b.len() as i64))
+                        .chain(b.into_iter()
+                        .flatten()
+                        .map(JsValue::from))
+                }).collect::<Vec<_>>().into_boxed_slice()
+            }
         }
     }
 }
@@ -211,6 +243,13 @@ pub trait NgPreAsyncEtagReader {
     where
         VecDataBlock<T>: DataBlock<T> + ngpre::ReadableDataBlock,
         T: ReflectedType;
+
+    async fn get_optimized_request_bundles(
+        &self,
+        path_name: &str,
+        data_attrs: &DatasetAttributes,
+        grid_coords: Vec<UnboundedGridCoord>,
+    ) -> Vec<Vec<UnboundedGridCoord>>;
 }
 
 pub mod wrapped {
