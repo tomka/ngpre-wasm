@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 
-use futures::FutureExt;
 use futures::future::TryFutureExt;
 use std::fmt::Write;
 use std::str::FromStr;
@@ -11,13 +10,12 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use futures::future::join_all;
 
-use js_sys::ArrayBuffer;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{console, Performance, Request, RequestInit, RequestMode, Response};
 
 use super::*;
-use ngpre::{BBox, DataLoader, DataLoaderResult, decode};
+use ngpre::{DataLoader, DataLoaderResult, decode};
 
 const ATTRIBUTES_FILE: &str = "info";
 
@@ -131,16 +129,12 @@ impl NgPreHTTPFetch {
     where
         T: ReflectedType,
     {
-        let da2 = data_attrs.clone();
-
         // FIXME: Input should be bounded already
         let bounded_grid_coords = grid_coords.iter().map(|coords| GridCoord::from_vec(coords.iter().map(|x| *x as u64).collect())).collect();
 
         // TODO: Could be nicer
         let zoom_level = data_attrs.get_scales().iter().position(|s| s.key == path_name).unwrap();
-        let voxel_offset = data_attrs.get_voxel_offset(zoom_level);
         let chunk_size = data_attrs.get_block_size(zoom_level);
-        let dimensions = data_attrs.get_dimensions(zoom_level);
 
         // For non-sharded data, there currently is no real optimization to be done.
         if !data_attrs.is_sharded(zoom_level) {
