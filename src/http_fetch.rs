@@ -209,6 +209,8 @@ impl NgPreHTTPFetch {
         let chunk_size = data_attrs.get_block_size(zoom_level);
         let dimensions = data_attrs.get_dimensions(zoom_level);
 
+        let loader = HTTPDataLoader {};
+
         // Handling sharding is handled here, because
         if data_attrs.is_sharded(zoom_level) {
             let meta = ngpre::PrecomputedMetadata {
@@ -242,7 +244,6 @@ impl NgPreHTTPFetch {
 
             // The cache service ultimately retrieves the data. We need to provide it with a
             // data loader to download the data from the respective path/URL.
-            let loader = HTTPDataLoader {};
             let cache = ngpre::CacheService {
                 enabled: false,
                 data_loader: &loader,
@@ -275,52 +276,46 @@ impl NgPreHTTPFetch {
             }).collect();
 
             return block_data;
-        }
+        } else {
+            let loaded_data = loader.get(
+                self.base_path.to_string(),
+                Some(false),
+                &grid_coords.iter().filter(|grid_coord| {
+                    // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
+                    // allow catching overflows when data from JavaScript is passed in.
+                    let mut n = 0;
+                    for coord in grid_coord.iter() {
+                        if *coord < 0 || *coord * chunk_size[n] as i64 > dimensions[n] as i64  {
+                            return false;
+                        }
+                        n += 1;
+                    }
+                    return true
+                }).map(|grid_coord| {
+                    (
+                        self.relative_block_path(path_name, &grid_coord, chunk_size, voxel_offset, dimensions),
+                        grid_coord.clone()
+                    )
+                }).collect()).await;
 
-        let mut block_data = vec![];
-
-        for grid_coord in grid_coords.iter() {
-            let block_path = self.relative_block_path(path_name, &grid_coord,
-                chunk_size, voxel_offset, dimensions);
-
-            // Make sure we are in bounds with requested blocks. This method accepts signed inputed, to
-            // allow catching overflows when data from JavaScript is passed in.
-            let mut offset_grid_position = GridCoord::new();
-            let mut n = 0;
-            for coord in grid_coord {
-                if *coord < 0 || *coord * chunk_size[n] as i64 > dimensions[n] as i64  {
-                    return vec![None];
-                }
-                offset_grid_position.push(*coord as u64);
-                n += 1;
-            }
-
-            let res = self.fetch(&block_path).await.unwrap();
-            assert!(res.is_instance_of::<Response>());
-            let resp: Response = res.dyn_into().unwrap();
-
-            if resp.ok() {
-                let etag: Option<String> = resp.headers().get("ETag").unwrap_or(None);
-                let block = JsFuture::from(resp.array_buffer().unwrap())
-                    .map_ok(|arrbuff_value| {
-                        assert!(arrbuff_value.is_instance_of::<ArrayBuffer>());
-                        let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
-                        let buff = typebuff.to_vec();
-
+            let block_data: Vec<_> = loaded_data.iter().map(|((_path, grid_coord), result)| {
+                return match result {
+                    Ok(block_details) => {
                         Some((<ngpre::DefaultBlock as ngpre::DefaultBlockReader<T, &[u8]>>::read_block(
-                            &buff,
+                            &block_details.content,
                             &da2,
-                            offset_grid_position,
+                            GridCoord::from(grid_coord.iter().map(|c| *c as u64).collect::<Vec<_>>()),
                             zoom_level).unwrap(),
-                            etag))
-                    }).await.unwrap();
-                block_data.push(block);
-            } else {
-                block_data.push(None);
-            }
-        }
+                            block_details.etag.clone()))
+                    },
+                    Err(_why) => {
+                        None
+                    }
+                };
+            }).collect();
 
-        return block_data;
+            return block_data;
+        }
     }
 }
 
@@ -419,14 +414,78 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
 #[async_trait(?Send)]
 impl DataLoader for HTTPDataLoader {
 
-    async fn get(&self, base_path: String, _progress: Option<bool>, tuples: &Vec<(String, u64, u64)>, _num: usize)
+    async fn get(&self, base_path: String, _progress: Option<bool>, tuples: &Vec<(String, UnboundedGridCoord)>)
+        -> HashMap<(String, UnboundedGridCoord), io::Result<DataLoaderResult>> {
+
+        if tuples.len() == 0 {
+            return HashMap::new();
+        }
+
+        let mut result = HashMap::new();
+        let mut tasks = Vec::new();
+        for (path, _grid_coord) in tuples.iter() {
+            let full_path = path_join(vec![&base_path, &path]).unwrap();
+
+            let request_options = RequestInit::new();
+            request_options.set_method("GET");
+            request_options.set_mode(RequestMode::Cors);
+
+            let req = Request::new_with_str_and_init(
+                &full_path,
+                &request_options).unwrap();
+
+            tasks.push(JsFuture::from(self_().unwrap().fetch_with_request(&req)));
+        }
+
+        let task_results = join_all(tasks).await;
+        for (i, response) in task_results.into_iter().enumerate() {
+            let (path, grid_coord) = &tuples[i];
+
+            let res = response.unwrap();
+            assert!(res.is_instance_of::<Response>());
+            let resp: Response = res.dyn_into().unwrap();
+
+            let status = resp.status_text();
+            if resp.ok() {
+                let arrbuff = JsFuture::from(resp.array_buffer().unwrap()).await;
+                match arrbuff {
+                    Err(_why) => {
+                        result.insert(
+                            (path.clone(), grid_coord.clone()),
+                            Err(io::Error::new(io::ErrorKind::InvalidInput, status))
+                        );
+                    },
+                    Ok(arrbuff_value) => {
+                        let typebuff: js_sys::Uint8Array = js_sys::Uint8Array::new(&arrbuff_value);
+                        let buff = typebuff.to_vec();
+                        result.insert(
+                            (path.clone(), grid_coord.clone()),
+                            Ok(DataLoaderResult {
+                                path: path.clone(),
+                                byterange: Range { start: 0, end: buff.len() as u64},
+                                content: buff,
+                                compress: "".to_string(),
+                                raw: true,
+                                etag: resp.headers().get("ETag").unwrap_or(None)
+                            })
+                        );
+                    }
+                };
+            } else {
+                result.insert(
+                        (path.clone(), grid_coord.clone()),
+                        Err(io::Error::new(io::ErrorKind::InvalidInput, status))
+                    );
+            }
+        }
+
+        result
+    }
+
+    async fn get_sharded(&self, base_path: String, _progress: Option<bool>, tuples: &Vec<(String, u64, u64)>)
         -> HashMap<(String, u64, u64), io::Result<DataLoaderResult>> {
 
         let mut result = HashMap::new();
-        for (path, byte_start, byte_end) in tuples.iter() {
-            let full_path = path_join(vec![&base_path, &path]).unwrap();
-        }
-
         let mut tasks = Vec::new();
         for (path, byte_start, byte_end) in tuples.iter() {
             let full_path = path_join(vec![&base_path, &path]).unwrap();
@@ -457,7 +516,7 @@ impl DataLoader for HTTPDataLoader {
             if resp.ok() {
                 let arrbuff = JsFuture::from(resp.array_buffer().unwrap()).await;
                 match arrbuff {
-                    Err(why) => {
+                    Err(_why) => {
                         result.insert(
                             (path.clone(), byte_start.clone(), byte_end.clone()),
                             Err(io::Error::new(io::ErrorKind::InvalidInput, status))
@@ -598,7 +657,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
         let start = perf_to_system(performance.now());
 
         let mut block_data = self.get_block_data(path_name, data_attrs, vec![grid_position.clone()]).await;
-        let block = block_data.remove(0);
+        let block = if block_data.len() == 0 { None } else { block_data.remove(0) };
 
         let end = perf_to_system(performance.now());
         console::log_1(&format!("read_block_with_etag {:?} duration: {:?}ms", &grid_pos,
