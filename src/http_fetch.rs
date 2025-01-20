@@ -546,7 +546,6 @@ impl DataLoader for HTTPDataLoader {
 
 impl NgPreAsyncReader for NgPreHTTPFetch {
     async fn get_version(&self) -> ngpre::Version {
-        self.get_attributes("").await;
         ngpre::Version::from_str(&"2.3.0").unwrap()
     }
 
