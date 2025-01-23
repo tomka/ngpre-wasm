@@ -69,14 +69,14 @@ impl NgPreHTTPFetch {
 
         let req = Request::new_with_str_and_init(
             &format!("{}/{}", &self.base_path, path_name),
-            &request_options).unwrap();
+            &request_options).expect("to create request object");
 
         JsFuture::from(self_().unwrap().fetch_with_request(&req))
     }
 
     async fn fetch_json(&self, path_name: &str) -> JsValue {
         utils::set_panic_hook();
-        let resp_value = self.fetch(path_name).await.unwrap();
+        let resp_value = self.fetch(path_name).await.expect("to wait on JavaScript promise");
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
 
