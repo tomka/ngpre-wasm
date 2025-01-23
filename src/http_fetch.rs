@@ -61,11 +61,12 @@ pub struct NgPreHTTPFetch {
 }
 
 impl NgPreHTTPFetch {
-    fn fetch(&self, path_name: &str) -> JsFuture {
+    fn fetch(&self, path_name: &str, use_cors: bool) -> JsFuture {
         utils::set_panic_hook();
         let request_options = RequestInit::new();
         request_options.set_method("GET");
-        request_options.set_mode(RequestMode::Cors);
+        let request_mode = if use_cors { RequestMode::Cors} else { RequestMode::NoCors };
+        request_options.set_mode(request_mode);
 
         let req = Request::new_with_str_and_init(
             &format!("{}/{}", &self.base_path, path_name),
@@ -74,9 +75,9 @@ impl NgPreHTTPFetch {
         JsFuture::from(self_().unwrap().fetch_with_request(&req))
     }
 
-    async fn fetch_json(&self, path_name: &str) -> JsValue {
+    async fn fetch_json(&self, path_name: &str, use_cors: bool) -> JsValue {
         utils::set_panic_hook();
-        let resp_value = self.fetch(path_name).await.expect("to wait on JavaScript promise");
+        let resp_value = self.fetch(path_name, use_cors).await.expect("to wait on JavaScript promise");
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
 
@@ -86,7 +87,7 @@ impl NgPreHTTPFetch {
     async fn get_attributes(&self, path_name: &str) -> serde_json::Value {
         utils::set_panic_hook();
         let path = self.get_dataset_attributes_path(path_name);
-        let js_val = self.fetch_json(&path).await;
+        let js_val = self.fetch_json(&path, true).await;
         serde_wasm_bindgen::from_value(js_val).expect("failed to convert javascript type into rust type")
     }
 
@@ -422,6 +423,7 @@ impl DataLoader for HTTPDataLoader {
 
             let request_options = RequestInit::new();
             request_options.set_method("GET");
+            // CORS mode is needed for range requests
             request_options.set_mode(RequestMode::Cors);
 
             let req = Request::new_with_str_and_init(
@@ -486,6 +488,7 @@ impl DataLoader for HTTPDataLoader {
 
             let request_options = RequestInit::new();
             request_options.set_method("GET");
+            // CORS mode is needed for range requests.
             request_options.set_mode(RequestMode::Cors);
 
             let req = Request::new_with_str_and_init(
@@ -553,12 +556,12 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
         utils::set_panic_hook();
 
         let path = self.get_dataset_attributes_path(path_name);
-        let js_val = self.fetch_json(&path).await;
+        let js_val = self.fetch_json(&path, true).await;
         serde_wasm_bindgen::from_value(js_val).unwrap()
     }
 
     async fn exists(&self, path_name: &str) -> bool {
-        let resp_value = self.fetch(path_name).await.unwrap();
+        let resp_value = self.fetch(path_name, true).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
         resp.ok()
