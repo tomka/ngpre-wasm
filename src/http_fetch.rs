@@ -69,7 +69,7 @@ impl NgPreHTTPFetch {
         request_options.set_mode(request_mode);
 
         let req = Request::new_with_str_and_init(
-            &format!("{}/{}", &self.base_path, path_name),
+            &normalize_path(format!("{}/{}", &self.base_path, &path_name)),
             &request_options).expect("to create request object");
 
         if accept.is_some() {
@@ -410,6 +410,23 @@ fn path_join(paths: Vec<&str>) -> Option<String> {
     Some(path.to_str().unwrap().to_owned())
 }
 
+pub fn normalize_path(path: String) -> String {
+    // If this path points to Google Cloud storage, rebuild the path so that it uses the object
+    // get method (see https://cloud.google.com/storage/docs/json_api/v1/objects/get).
+    // Turn gs://h01-release/data/20210601/4nm_raw/
+    // into https://www.googleapis.com/storage/v1/b/h01-release/o/data%2F20210601%2F4nm_raw%2F
+    // Note that the new URL will also get a ?alt=media appended.
+    if path.starts_with("gs://") {
+        let components: Vec<_> = path.split("/").collect();
+        assert!(components.len() > 3);
+        let bucket_name = components[2];
+        let path = components[3..].join("%2F");
+        return format!("https://www.googleapis.com/storage/v1/b/{bucket_name}/o/{path}?alt=media");
+    }
+
+    return path;
+}
+
 #[async_trait(?Send)]
 impl DataLoader for HTTPDataLoader {
 
@@ -423,7 +440,7 @@ impl DataLoader for HTTPDataLoader {
         let mut result = HashMap::new();
         let mut tasks = Vec::new();
         for (path, _grid_coord) in tuples.iter() {
-            let full_path = path_join(vec![&base_path, &path]).unwrap();
+            let full_path = normalize_path(format!("{}/{}", &base_path, &path));
 
             let request_options = RequestInit::new();
             request_options.set_method("GET");
@@ -488,7 +505,8 @@ impl DataLoader for HTTPDataLoader {
         let mut result = HashMap::new();
         let mut tasks = Vec::new();
         for (path, byte_start, byte_end) in tuples.iter() {
-            let full_path = path_join(vec![&base_path, &path]).unwrap();
+            // FIXME: Use more robust joining of paths and delimiter substitution
+            let full_path = normalize_path(format!("{}/{}", &base_path, &path));
 
             let request_options = RequestInit::new();
             request_options.set_method("GET");
@@ -624,7 +642,7 @@ impl NgPreAsyncEtagReader for NgPreHTTPFetch {
                  _data_attrs.get_dimensions(zoom_level));
 
         let req = Request::new_with_str_and_init(
-            &format!("{}/{}", &self.base_path, block_path),
+            &normalize_path(format!("{}/{}", &self.base_path, &block_path)),
             &request_options).unwrap();
         let req_promise = self_().unwrap().fetch_with_request(&req);
 
