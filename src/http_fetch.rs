@@ -61,7 +61,7 @@ pub struct NgPreHTTPFetch {
 }
 
 impl NgPreHTTPFetch {
-    fn fetch(&self, path_name: &str, use_cors: bool) -> JsFuture {
+    fn fetch(&self, path_name: &str, use_cors: bool, accept: Option<&str>) -> JsFuture {
         utils::set_panic_hook();
         let request_options = RequestInit::new();
         request_options.set_method("GET");
@@ -72,12 +72,16 @@ impl NgPreHTTPFetch {
             &format!("{}/{}", &self.base_path, path_name),
             &request_options).expect("to create request object");
 
+        if accept.is_some() {
+            let _ = req.headers().set("Accept", accept.unwrap());
+        }
+
         JsFuture::from(self_().unwrap().fetch_with_request(&req))
     }
 
     async fn fetch_json(&self, path_name: &str, use_cors: bool) -> JsValue {
         utils::set_panic_hook();
-        let resp_value = self.fetch(path_name, use_cors).await.expect("to wait on JavaScript promise");
+        let resp_value = self.fetch(path_name, use_cors, Some("application/json")).await.expect("to wait on JavaScript promise");
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().expect("failed to convert the promise into Response type");
 
@@ -561,7 +565,7 @@ impl NgPreAsyncReader for NgPreHTTPFetch {
     }
 
     async fn exists(&self, path_name: &str) -> bool {
-        let resp_value = self.fetch(path_name, true).await.unwrap();
+        let resp_value = self.fetch(path_name, true, None).await.unwrap();
         assert!(resp_value.is_instance_of::<Response>());
         let resp: Response = resp_value.dyn_into().unwrap();
         resp.ok()
